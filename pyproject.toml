@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiotoolbox"
+version = "0.0.0"
+
+description = "..."
+readme = "readme.md"
+license = { text = "EUPL-1.2" }
+requires-python = ">=3.9"
+
+[project.urls]
+repository = "https://github.com/slietar/aiotoolbox"
+
+[tool.setuptools.packages.find]
+include = ["aiotoolbox"]

@@ -1,8 +1,9 @@
 import asyncio
 import contextlib
+import sys
 import traceback
 from asyncio import Event, Future, Task
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from traceback import FrameSummary
 from types import TracebackType
 from typing import (Any, AsyncGenerator, Coroutine, Iterable, Optional, Self,
@@ -14,32 +15,26 @@ from .race import race
 
 @dataclass
 class HierarchyNode:
-  def __get_node_name__(self) -> list[str] | str:
-    return self.__class__.__name__
-
-  def __get_node_children__(self) -> Iterable[Self | list[str]]:
-    return list()
+  name: list[str] | str
+  children: list[Self | list[str]] = field(default_factory=list)
 
   def format_hierarchy(self, *, prefix: str = str()):
-    children = list(self.__get_node_children__())
-    raw_name = self.__get_node_name__()
-    name = raw_name if isinstance(raw_name, list) else [raw_name]
+    name = self.name if isinstance(self.name, list) else [self.name]
 
     return ("\n" + prefix).join(name) + str().join([
       "\n" + prefix
-        + ("└── " if (last := (index == (len(children) - 1))) else "├── ")
+        + ("└── " if (last := (index == (len(self.children) - 1))) else "├── ")
         + (child.format_hierarchy(prefix=(prefix + ("    " if last else "│   "))) if isinstance(child, HierarchyNode) else ("\n" + prefix + ("    " if last else "│   ")).join(child))
-        for index, child in enumerate(children)
+        for index, child in enumerate(self.children)
     ])
 
 
 T = TypeVar('T')
 
 
-pools_by_task = dict[Task[None], 'Pool']()
-
 @dataclass
 class PoolTaskInfo:
+  call_tb: Optional[TracebackType]
   priority: int
   frame: Optional[FrameSummary]
   pool: 'Optional[Pool]' = None
@@ -49,10 +44,14 @@ class Pool(HierarchyNode):
   An object used to manage tasks created in a common context.
   """
 
+  _pools_by_task = dict[Task[None], Self]()
+
   def __init__(self, name: Optional[str] = None, *, open: bool = False):
     self._closing_priority: Optional[int] = None
-    self._open = False
     self._name = name
+    self._open = False
+    self._owning_task: Optional[Task[Any]] = None
+    self._parent_pool: Optional[Self] = None
     self._preopen = open
     self._task_event = Event()
     self._tasks = dict[Task[None], PoolTaskInfo]()
@@ -62,13 +61,53 @@ class Pool(HierarchyNode):
 
   def __get_node_children__(self):
     for task, task_info in self._tasks.items():
-      if task_info.pool:
-        yield task_info.pool
+      yield [
+        f"{task.get_name()}" + (f" (priority={task_info.priority})" if task_info.priority != 0 else str()),
+        *([f"Source: {frame.name}() in {frame.filename}" + (f":{frame.lineno}" if frame.lineno is not None else str())] if (frame := task_info.frame) else [])
+      ]
+
+  def format(self):
+    current_pool = self
+    pool_path: list[Self] = [self]
+
+    while (parent_pool := current_pool._parent_pool):
+      pool_path.append(parent_pool)
+      current_pool = parent_pool
+
+    current_owning_task: Optional[Task[Any]] = None
+    root: Optional[HierarchyNode] = None
+    current_node: Optional[HierarchyNode] = None
+
+    for pool_index, pool in enumerate(reversed(pool_path)):
+      pool_node = HierarchyNode(pool._name or "[Untitled pool]")
+
+      for task, task_info in pool._tasks.items():
+        pool_node.children.append(
+          HierarchyNode([
+            f"{task.get_name()}" + (f" (priority={task_info.priority})" if task_info.priority != 0 else str()),
+            *([f"Source: {frame.name}() in {frame.filename}" + (f":{frame.lineno}" if frame.lineno is not None else str())] if (frame := task_info.frame) else [])
+          ])
+        )
+
+      # if pool._owning_task and (pool._owning_task is not current_owning_task):
+      if pool._owning_task and (pool_index < 1):
+        task_node = HierarchyNode(pool._owning_task.get_name())
+        task_node.children.append(pool_node)
       else:
-        yield [
-          f"{task.get_name()}" + (f" (priority={task_info.priority})" if task_info.priority != 0 else str()),
-          *([f"Source: {frame.name}() in {frame.filename}" + (f":{frame.lineno}" if frame.lineno is not None else str())] if (frame := task_info.frame) else [])
-        ]
+        task_node = None
+
+      current_owning_task = pool._owning_task
+
+      if not root:
+        root = task_node or pool_node
+        current_node = pool_node
+      else:
+        assert current_node
+        current_node.children.append(task_node or pool_node)
+        current_node = pool_node
+
+    assert root
+    return root.format_hierarchy()
 
 
   def __len__(self):
@@ -82,15 +121,21 @@ class Pool(HierarchyNode):
     Add a new task to the pool.
     """
 
-    if (not self._open) and not (self._preopen):
+    if (not self._open) and (not self._preopen):
       raise Exception("Pool not open")
 
     self._tasks[task] = PoolTaskInfo(
+      call_tb=slice_tb_start(create_tb(frame_skip), 9),
       priority=priority,
       frame=traceback.extract_stack(limit=(2 + frame_skip))[0]
     )
 
-    pools_by_task[task] = self
+    # slice_tb_start(self._tasks[task].call_trace, 0)
+    # traceback.print_tb(self._tasks[task].call_trace)
+    # print()
+    # print()
+
+    self.__class__._pools_by_task[task] = self
 
     # Wake up the wait() loop if necessary
     self._task_event.set()
@@ -122,15 +167,17 @@ class Pool(HierarchyNode):
       # Wake up wait() and have it return
       self._task_event.set()
 
-  def create_child(self):
-    """
-    Create a child pool.
-    """
+  # def create_child(self):
+  #   """
+  #   Create a child pool.
+  #   """
 
-    pool = self.__class__()
-    self.start_soon(pool.wait())
+  #   pool = self.__class__()
+  #   pool.parent = self
 
-    return pool
+  #   self.start_soon(pool.wait())
+
+  #   return pool
 
   def wait(self, *, forever: bool = False):
     """
@@ -163,6 +210,8 @@ class Pool(HierarchyNode):
     cancelled = False
     exceptions = list[BaseException]()
 
+    # call_trace = list(self._tasks.values())[1].call_trace
+
     while True:
       self._task_event.clear()
 
@@ -184,10 +233,13 @@ class Pool(HierarchyNode):
             pass
           else:
             if exc:
-              exceptions.append(exc)
+              task_info = self._tasks[task]
+              join_tbs(task_info.call_tb, exc.__traceback__)
+              exceptions.append(exc.with_traceback(task_info.call_tb))
+              # exceptions.append(exc)
 
           del self._tasks[task]
-          del pools_by_task[task]
+          del self.__class__._pools_by_task[task]
 
       if (exceptions and (self._closing_priority is None)) or (self._tasks and (self._closing_priority is not None) and (self._max_priority() < self._closing_priority)):
         self.close()
@@ -296,10 +348,10 @@ class Pool(HierarchyNode):
 
     return handle
 
-  @staticmethod
-  def current():
+  @classmethod
+  def current(cls) -> Self | None:
     current_task = asyncio.current_task()
-    return current_task and pools_by_task.get(current_task)
+    return current_task and cls._pools_by_task.get(current_task)
 
   @classmethod
   @contextlib.asynccontextmanager
@@ -317,6 +369,9 @@ class Pool(HierarchyNode):
     assert current_task
 
     pool = cls(name)
+    pool._owning_task = current_task
+    pool._parent_pool = cls.current()
+
     current_task_future = Future[None]()
     wait_task = asyncio.create_task(pool.wait(forever=forever))
 
@@ -338,10 +393,13 @@ class Pool(HierarchyNode):
           if current_task_future.done():
             break
 
-    pool.start_soon(current_task_handler(), frame_skip=2)
+    pool.start_soon(current_task_handler(), frame_skip=2, name='<Asynchronous context manager>')
 
-    # current_task_old_pool = pools_by_task.get(current_task)
-    # pools_by_task[current_task] = pool
+    current_task_old_pool = cls._pools_by_task.get(current_task)
+    cls._pools_by_task[current_task] = pool
+
+    # if current_task_old_pool and (current_task is not current_task_old_pool._owning_task):
+    #   current_task_old_pool._tasks[current_task].pool = pool
 
     try:
       yield pool
@@ -350,14 +408,21 @@ class Pool(HierarchyNode):
     else:
       current_task_future.set_result(None)
 
-    # del pools_by_task[wait_task]
+    if current_task_old_pool is not None:
+      cls._pools_by_task[current_task] = current_task_old_pool
+    else:
+      del cls._pools_by_task[current_task]
 
-    # if current_task_old_pool is not None:
-    #   pools_by_task[current_task] = current_task_old_pool
-    # else:
-    #   del pools_by_task[current_task]
+    try:
+      await wait_task
+    except Exception as e:
+      raise e.with_traceback(slice_tb_start(e.__traceback__, 2))
+    finally:
+      pass
 
-    await wait_task
+      # if current_task_old_pool and (current_task is not current_task_old_pool._owning_task):
+      #   current_task_old_pool._tasks[current_task].pool = None
+
 
 @dataclass
 class TaskHandle:
@@ -369,3 +434,54 @@ class TaskHandle:
 
   def interrupted(self):
     return self.task.cancelling() > 0
+
+
+def create_tb(start_depth: int = 0):
+  tb: Optional[TracebackType] = None
+  depth = (start_depth + 2)
+
+  while True:
+    try:
+      frame = sys._getframe(depth)
+      depth += 1
+    except ValueError:
+      break
+
+    tb = TracebackType(tb, frame, frame.f_lasti, frame.f_lineno)
+
+  return tb
+
+
+def join_tbs(start: Optional[TracebackType], end: Optional[TracebackType]):
+  if not start:
+    return end
+
+  current_tb = start
+
+  while (next_tb := current_tb.tb_next):
+    current_tb = next_tb
+
+  current_tb.tb_next = end
+
+def slice_tb_start(tb: Optional[TracebackType], size: int):
+  current_tb = tb
+
+  for _ in range(size):
+    if not current_tb:
+      return None
+
+    current_tb = current_tb.tb_next
+
+  return current_tb
+
+def slice_tb_end(tb: TracebackType, size: int):
+  tbs = []
+
+  current_tb = tb
+
+  while current_tb:
+    tbs.append(current_tb)
+    current_tb = current_tb.tb_next
+
+  if size > 0:
+    tbs[-size - 1].tb_next = None

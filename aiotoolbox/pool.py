@@ -6,25 +6,23 @@ from asyncio import Event, Future, Task
 from dataclasses import dataclass, field
 from traceback import FrameSummary
 from types import TracebackType
-from typing import (Any, AsyncGenerator, Coroutine, Iterable, Optional, Self,
-                    Sequence, TypeVar)
-from weakref import WeakKeyDictionary
+from typing import Any, AsyncGenerator, Coroutine, Literal, Optional, Self, TypeVar
 
 from .race import race
 
 
-@dataclass
+@dataclass(slots=True)
 class HierarchyNode:
   name: list[str] | str
   children: list[Self | list[str]] = field(default_factory=list)
 
-  def format_hierarchy(self, *, prefix: str = str()):
+  def format(self, *, prefix: str = str()):
     name = self.name if isinstance(self.name, list) else [self.name]
 
     return ("\n" + prefix).join(name) + str().join([
       "\n" + prefix
         + ("└── " if (last := (index == (len(self.children) - 1))) else "├── ")
-        + (child.format_hierarchy(prefix=(prefix + ("    " if last else "│   "))) if isinstance(child, HierarchyNode) else ("\n" + prefix + ("    " if last else "│   ")).join(child))
+        + (child.format(prefix=(prefix + ("    " if last else "│   "))) if isinstance(child, HierarchyNode) else ("\n" + prefix + ("    " if last else "│   ")).join(child))
         for index, child in enumerate(self.children)
     ])
 
@@ -32,14 +30,14 @@ class HierarchyNode:
 T = TypeVar('T')
 
 
-@dataclass
+@dataclass(slots=True)
 class PoolTaskInfo:
   call_tb: Optional[TracebackType]
   priority: int
   frame: Optional[FrameSummary]
   pool: 'Optional[Pool]' = None
 
-class Pool(HierarchyNode):
+class Pool:
   """
   An object used to manage tasks created in a common context.
   """
@@ -48,6 +46,7 @@ class Pool(HierarchyNode):
 
   def __init__(self, name: Optional[str] = None, *, open: bool = False):
     self._closing_priority: Optional[int] = None
+    self._direct_pool: Optional[Self] = None
     self._name = name
     self._open = False
     self._owning_task: Optional[Task[Any]] = None
@@ -56,58 +55,43 @@ class Pool(HierarchyNode):
     self._task_event = Event()
     self._tasks = dict[Task[None], PoolTaskInfo]()
 
-  def __get_node_name__(self):
-    return self._name or "Pool"
+  def _prepare_format(self, path_filter: list[Self]):
+    node = HierarchyNode(self._name or "<Untitled pool>")
 
-  def __get_node_children__(self):
     for task, task_info in self._tasks.items():
-      yield [
+      if path_filter and (task_info.pool is not path_filter[0]):
+        continue
+
+      task_node = HierarchyNode([
         f"{task.get_name()}" + (f" (priority={task_info.priority})" if task_info.priority != 0 else str()),
         *([f"Source: {frame.name}() in {frame.filename}" + (f":{frame.lineno}" if frame.lineno is not None else str())] if (frame := task_info.frame) else [])
-      ]
+      ])
 
-  def format(self):
-    current_pool = self
-    pool_path: list[Self] = [self]
+      node.children.append(task_node)
 
-    while (parent_pool := current_pool._parent_pool):
-      pool_path.append(parent_pool)
-      current_pool = parent_pool
+      if task_info.pool:
+        task_node.children.append(task_info.pool._prepare_format(path_filter[1:])) # type: ignore
 
-    current_owning_task: Optional[Task[Any]] = None
-    root: Optional[HierarchyNode] = None
-    current_node: Optional[HierarchyNode] = None
+    if self._direct_pool:
+      node.children.append(self._direct_pool._prepare_format(path_filter[1:]))
 
-    for pool_index, pool in enumerate(reversed(pool_path)):
-      pool_node = HierarchyNode(pool._name or "[Untitled pool]")
+    return node
 
-      for task, task_info in pool._tasks.items():
-        pool_node.children.append(
-          HierarchyNode([
-            f"{task.get_name()}" + (f" (priority={task_info.priority})" if task_info.priority != 0 else str()),
-            *([f"Source: {frame.name}() in {frame.filename}" + (f":{frame.lineno}" if frame.lineno is not None else str())] if (frame := task_info.frame) else [])
-          ])
-        )
+  def format(self, *, ancestors: Literal['all', 'none', 'path'] = 'path'):
+    pool_path = [self]
+    target_pool = self
 
-      # if pool._owning_task and (pool._owning_task is not current_owning_task):
-      if pool._owning_task and (pool_index < 1):
-        task_node = HierarchyNode(pool._owning_task.get_name())
-        task_node.children.append(pool_node)
-      else:
-        task_node = None
+    if ancestors != 'none':
+      while (parent_pool := target_pool._parent_pool):
+        pool_path.append(parent_pool)
+        target_pool = parent_pool
 
-      current_owning_task = pool._owning_task
+    root_node = target_pool._prepare_format(pool_path[1::-1] if ancestors == 'path' else [])
 
-      if not root:
-        root = task_node or pool_node
-        current_node = pool_node
-      else:
-        assert current_node
-        current_node.children.append(task_node or pool_node)
-        current_node = pool_node
+    if (ancestors != 'none') and target_pool._owning_task:
+      root_node = HierarchyNode(target_pool._owning_task.get_name(), [root_node])
 
-    assert root
-    return root.format_hierarchy()
+    return root_node.format()
 
 
   def __len__(self):
@@ -398,8 +382,12 @@ class Pool(HierarchyNode):
     current_task_old_pool = cls._pools_by_task.get(current_task)
     cls._pools_by_task[current_task] = pool
 
-    # if current_task_old_pool and (current_task is not current_task_old_pool._owning_task):
-    #   current_task_old_pool._tasks[current_task].pool = pool
+    if current_task_old_pool:
+      if current_task is not current_task_old_pool._owning_task:
+        current_task_old_pool._tasks[current_task].pool = pool
+      else:
+        assert not current_task_old_pool._direct_pool
+        current_task_old_pool._direct_pool = pool
 
     try:
       yield pool
@@ -418,10 +406,11 @@ class Pool(HierarchyNode):
     except Exception as e:
       raise e.with_traceback(slice_tb_start(e.__traceback__, 2))
     finally:
-      pass
-
-      # if current_task_old_pool and (current_task is not current_task_old_pool._owning_task):
-      #   current_task_old_pool._tasks[current_task].pool = None
+      if current_task_old_pool:
+        if current_task is not current_task_old_pool._owning_task:
+          current_task_old_pool._tasks[current_task].pool = None
+        else:
+          current_task_old_pool._direct_pool = None
 
 
 @dataclass

@@ -3,7 +3,7 @@ from typing import Any, Awaitable, Callable
 
 def aexit_handler(func: Callable[[Any, bool], Awaitable[None]], /):
   """
-  Create a new asynchronous exit handler for a function or method while handling any exception raised in the context block.
+  Create an asynchronous exit handler for a function or method while handling any exception raised in the context block.
 
   Any exception raised in the context is raised again after the handler finishes and it is not possible to intercept that exception. If an exception is raised both in the context and the exit handler, a `BaseExceptionGroup` with both exceptions is raised.
 

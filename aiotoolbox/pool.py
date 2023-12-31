@@ -6,9 +6,16 @@ from asyncio import Event, Future, Task
 from dataclasses import dataclass, field
 from traceback import FrameSummary
 from types import TracebackType
-from typing import Any, AsyncGenerator, Coroutine, Literal, Optional, Self, TypeVar
+from typing import Any, AsyncGenerator, Coroutine, Literal, Optional, Self
 
 from .race import race
+
+
+class InvalidPoolStatusError(RuntimeError):
+  pass
+
+class LazyTaskProtocolError(RuntimeError):
+  pass
 
 
 @dataclass(slots=True)
@@ -27,13 +34,10 @@ class HierarchyNode:
     ])
 
 
-T = TypeVar('T')
-
-
 @dataclass(slots=True)
 class PoolTaskInfo:
   call_tb: Optional[TracebackType]
-  priority: int
+  depth: int
   frame: Optional[FrameSummary]
   pool: 'Optional[Pool]' = None
 
@@ -44,14 +48,13 @@ class Pool:
 
   _pools_by_task = dict[Task[None], Self]()
 
-  def __init__(self, name: Optional[str] = None, *, open: bool = False):
-    self._closing_priority: Optional[int] = None
+  def __init__(self, name: Optional[str] = None):
+    self._closing_depth: Optional[int] = None
     self._direct_pool: Optional[Self] = None
     self._name = name
-    self._open = False
+    self._running = False
     self._owning_task: Optional[Task[Any]] = None
     self._parent_pool: Optional[Self] = None
-    self._preopen = open
     self._task_event = Event()
     self._tasks = dict[Task[None], PoolTaskInfo]()
 
@@ -63,7 +66,7 @@ class Pool:
         continue
 
       task_node = HierarchyNode([
-        f"{task.get_name()}" + (f" (priority={task_info.priority})" if task_info.priority != 0 else str()),
+        f"{task.get_name()}" + (f" (depth={task_info.depth})" if task_info.depth != 0 else str()),
         *([f"Source: {frame.name}() in {frame.filename}" + (f":{frame.lineno}" if frame.lineno is not None else str())] if (frame := task_info.frame) else [])
       ])
 
@@ -100,18 +103,22 @@ class Pool:
   def __repr__(self):
     return f"{self.__class__.__name__}" + (f"(name={self._name!r})" if self._name else "()")
 
-  def add(self, task: Task[Any], *, frame_skip: int = 0, priority: int = 0):
+  def _add(self, task: Task[None], /, *, _frame_skip: int = 0, depth: int = 0):
     """
     Add a new task to the pool.
+
+    Parameters
+      depth: The depth of the task.
+      task: The task to add.
     """
 
-    if (not self._open) and (not self._preopen):
-      raise Exception("Pool not open")
+    if not self._running:
+      raise InvalidPoolStatusError("Pool not open")
 
     self._tasks[task] = PoolTaskInfo(
-      call_tb=slice_tb_start(create_tb(frame_skip), 9),
-      priority=priority,
-      frame=traceback.extract_stack(limit=(2 + frame_skip))[0]
+      call_tb=slice_tb_start(create_tb(_frame_skip), 9),
+      depth=depth,
+      frame=traceback.extract_stack(limit=(2 + _frame_skip))[0]
     )
 
     # slice_tb_start(self._tasks[task].call_trace, 0)
@@ -124,15 +131,7 @@ class Pool:
     # Wake up the wait() loop if necessary
     self._task_event.set()
 
-  async def cancel(self):
-    """
-    Cancel all tasks currently in the pool and wait for all tasks to finish, including those that might be added during cancellation.
-    """
-
-    self.close()
-    await self.wait()
-
-  def close(self):
+  def _close(self):
     """
     Cancel all tasks currently in the pool.
 
@@ -140,58 +139,34 @@ class Pool:
     """
 
     if self._tasks:
-      self._closing_priority = self._max_priority()
+      self._closing_depth = self._max_depth()
 
       for task, task_info in self._tasks.items():
-        if task_info.priority >= self._closing_priority:
+        if task_info.depth >= self._closing_depth:
           task.cancel()
     else:
-      self._closing_priority = 0
+      self._closing_depth = 0
 
       # Wake up wait() and have it return
       self._task_event.set()
 
-  # def create_child(self):
-  #   """
-  #   Create a child pool.
-  #   """
-
-  #   pool = self.__class__()
-  #   pool.parent = self
-
-  #   self.start_soon(pool.wait())
-
-  #   return pool
-
-  def wait(self, *, forever: bool = False):
+  def run(self, *, forever: bool = False):
     """
-    Wait for all tasks in the pool to finish, including those that might be added later.
+    Run the pool.
 
     Cancelling this call cancels all tasks in the pool.
-
-    Raises
-      asyncio.CancelledError
     """
 
-    if self._open:
-      raise Exception("Pool already open")
+    if self._running:
+      raise InvalidPoolStatusError("Pool already open")
 
-    self._open = True
+    self._running = True
     return self._wait(forever=forever)
 
-  def _max_priority(self):
-    return max(task_info.priority for task_info in self._tasks.values())
+  def _max_depth(self):
+    return max(task_info.depth for task_info in self._tasks.values())
 
   async def _wait(self, *, forever: bool):
-    # current_pool = self.current()
-
-    # current_task = asyncio.current_task()
-    # assert current_task
-
-    # if current_pool:
-    #   current_pool._tasks[current_task].pool = self
-
-    cancelled = False
     exceptions = list[BaseException]()
 
     # call_trace = list(self._tasks.values())[1].call_trace
@@ -206,8 +181,7 @@ class Pool:
         )
       except asyncio.CancelledError:
         # Reached when the call to wait() is cancelled
-        cancelled = True
-        self.close()
+        self._close()
 
       for task in list(self._tasks.keys()):
         if task.done():
@@ -220,18 +194,17 @@ class Pool:
               task_info = self._tasks[task]
               join_tbs(task_info.call_tb, exc.__traceback__)
               exceptions.append(exc.with_traceback(task_info.call_tb))
-              # exceptions.append(exc)
 
           del self._tasks[task]
           del self.__class__._pools_by_task[task]
 
-      if (exceptions and (self._closing_priority is None)) or (self._tasks and (self._closing_priority is not None) and (self._max_priority() < self._closing_priority)):
-        self.close()
+      if (exceptions and (self._closing_depth is None)) or (self._tasks and (self._closing_depth is not None) and (self._max_depth() < self._closing_depth)):
+        self._close()
 
-      if (not self._tasks) and ((not forever) or (self._closing_priority is not None)):
+      if (not self._tasks) and ((not forever) or (self._closing_depth is not None)):
         break
 
-    self._open = False
+    self._running = False
 
     # if current_pool:
     #   current_pool._tasks[current_task].pool = None
@@ -241,49 +214,64 @@ class Pool:
     if exceptions:
       raise exceptions[0]
 
-    if cancelled:
-      raise asyncio.CancelledError
-
-  def start_soon(
+  def spawn(
     self,
-    coro: Coroutine[Any, Any, T],
+    coro: Coroutine[Any, Any, None],
     /, *,
+    _frame_skip: int = 0,
     critical: bool = False,
-    frame_skip: int = 0,
+    depth: int = 0,
     name: Optional[str] = None,
-    priority: int = 0
-  ) -> Task[T]:
+  ):
     """
-    Create a task from the provided coroutine and adds it to the pool.
+    Create a task from the provided coroutine and add it to the pool.
 
     Parameters:
-      coro: The coroutine to be started soon.
+      coro: The coroutine from which to create a task.
       critical: Whether to close the pool when this task finishes.
-      name: The name of the task.
-      priority: The priority of the task. Tasks with a lower priority will only be cancelled once all tasks with a higher priority have finished.
+      depth: The task's depth. Tasks with a lower depth will only be cancelled once all tasks with a higher depth have finished.
+      name: The task's name.
     """
 
-    if (not self._open) and (not self._preopen):
-      raise Exception("Pool not open")
+    if not self._running:
+      raise InvalidPoolStatusError("Pool not open")
 
     task = asyncio.create_task(coro, name=name)
-    self.add(task, frame_skip=(frame_skip + 1), priority=priority)
+    self._add(task, _frame_skip=(_frame_skip + 1), depth=depth)
 
     if critical:
-      def callback(task: Task[T]):
+      def callback(task: Task[None]):
         try:
           task.result()
         except:
           pass
         else:
-          if self._closing_priority is None:
-            self.close()
+          if self._closing_depth is None:
+            self._close()
 
       task.add_done_callback(callback)
 
-    return task
+  async def spawn_lazy(
+    self,
+    coro: AsyncGenerator[None, None],
+    /, *,
+    depth: int = 0,
+    name: Optional[str] = None
+  ):
+    """
+    Create a two-phase task and return once the first phase is over.
 
-  async def wait_until_ready(self, coro: AsyncGenerator[Any, None], /, *, priority: int = 0):
+    If an exception occurs or if the pool is cancelled during the first phase, this method never returns. Cancelling this method has no effect.
+
+    Parameters
+      coro: An asynchronous generator that yields exactly once between the first and second phase, from which to create the task.
+      depth: The task's depth.
+      name: The task's name.
+
+    Raises
+      LazyTaskProtocolError: If the coroutine does not yield exactly once.
+    """
+
     ready_event = Event()
 
     async def wrapper_coro():
@@ -292,7 +280,7 @@ class Pool:
       try:
         await anext(coro_iter)
       except StopAsyncIteration:
-        raise Exception("Coroutine did not yield")
+        raise LazyTaskProtocolError("Coroutine did not yield")
 
       ready_event.set()
 
@@ -301,14 +289,32 @@ class Pool:
       except StopAsyncIteration:
         pass
       else:
-        raise Exception("Coroutine did not stop after first yield")
+        raise LazyTaskProtocolError("Coroutine did not stop after first yield")
 
-    self.start_soon(wrapper_coro(), frame_skip=1, priority=priority)
+    self.spawn(wrapper_coro(), _frame_skip=1, depth=depth)
     await ready_event.wait()
 
-  def start_soon_with_handle(self, coro: Coroutine[Any, Any, Any], /, *, name: Optional[str] = None, priority: int = 0):
-    if (not self._open) and (not self._preopen):
-      raise Exception("Pool not open")
+  def spawn_handled(
+    self,
+    coro: Coroutine[Any, Any, None],
+    /, *,
+    depth: int = 0,
+    name: Optional[str] = None
+  ):
+    """
+    Create a task and return a handle to it.
+
+    Parameters
+      coro: The coroutine from which to create a task.
+      depth: The task's depth.
+      name: The task's name.
+
+    Returns
+      A `TaskHandle` object that can be used to interrupt the task.
+    """
+
+    if not self._running:
+      raise InvalidPoolStatusError("Pool not open")
 
     inner_task = asyncio.create_task(coro)
     handle = TaskHandle(inner_task)
@@ -328,12 +334,19 @@ class Pool:
 
           cancelled = True
 
-    self.start_soon(outer_func(), name=name, priority=priority)
+    self.spawn(outer_func(), name=name, depth=depth) # TODO: Check frames
 
     return handle
 
   @classmethod
-  def current(cls) -> Self | None:
+  def current(cls):
+    """
+    Get the current pool.
+
+    Returns
+      A `Pool` object, or `None` if there is no current task or if the current task is not running in a pool.
+    """
+
     current_task = asyncio.current_task()
     return current_task and cls._pools_by_task.get(current_task)
 
@@ -347,6 +360,7 @@ class Pool:
 
     Parameters
       forever: Whether the pool should stay open once all tasks have finished.
+      name: The pool's name.
     """
 
     current_task = asyncio.current_task()
@@ -357,7 +371,7 @@ class Pool:
     pool._parent_pool = cls.current()
 
     current_task_future = Future[None]()
-    wait_task = asyncio.create_task(pool.wait(forever=forever))
+    run_task = asyncio.create_task(pool.run(forever=forever))
 
     async def current_task_handler():
       while True:
@@ -366,8 +380,8 @@ class Pool:
         except asyncio.CancelledError:
           # If the task was cancelled from the outside
           if current_task_future.done():
-            if pool._closing_priority is None:
-              pool.close()
+            if pool._closing_depth is None:
+              pool._close()
 
             raise
 
@@ -377,7 +391,7 @@ class Pool:
           if current_task_future.done():
             break
 
-    pool.start_soon(current_task_handler(), frame_skip=2, name='<Asynchronous context manager>')
+    pool.spawn(current_task_handler(), _frame_skip=2, name='<Asynchronous context manager>')
 
     current_task_old_pool = cls._pools_by_task.get(current_task)
     cls._pools_by_task[current_task] = pool
@@ -402,7 +416,7 @@ class Pool:
       del cls._pools_by_task[current_task]
 
     try:
-      await wait_task
+      await run_task
     except Exception as e:
       raise e.with_traceback(slice_tb_start(e.__traceback__, 2))
     finally:
@@ -413,17 +427,31 @@ class Pool:
           current_task_old_pool._direct_pool = None
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class TaskHandle:
+  """
+  An object used to control a task running in a pool.
+  """
+
   task: Task
 
   def interrupt(self):
+    """
+    Interrupt the task, that is, cancel it if it is not already cancelled.
+    """
+
     if not self.interrupted():
       self.task.cancel()
 
   def interrupted(self):
+    """
+    Get whether the task has been interrupted.
+    """
+
     return self.task.cancelling() > 0
 
+
+# Utility functions
 
 def create_tb(start_depth: int = 0):
   tb: Optional[TracebackType] = None
@@ -474,3 +502,11 @@ def slice_tb_end(tb: TracebackType, size: int):
 
   if size > 0:
     tbs[-size - 1].tb_next = None
+
+
+__all__ = [
+  'InvalidPoolStatusError',
+  'LazyTaskProtocolError',
+  'Pool',
+  'TaskHandle'
+]

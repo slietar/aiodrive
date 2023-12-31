@@ -39,7 +39,7 @@ async def wait_all(items: Iterable[Coroutine[Any, Any, Any] | Task[Any]], /):
 
   All coroutines passed as argument are converted to tasks. If an exception is raised by one of the tasks, the other tasks are still awaited without being cancelled, until all tasks finish. If a single exception has been raised while awaiting tasks, it is re-raised. If more than one exception has been raised, a `BaseExceptionGroup` is raised with the caught exceptions.
 
-  If the call to `wait_all()` is cancelled, all unfinished tasks are cancelled and awaited. The `asyncio.CancelledError` exception is re-raised if no exception was raised by the tasks, otherwise the procedure described earlier applies. If another cancellation occurs while still awaiting the tasks, tasks are cancelled and awaited again.
+  If the call to `wait_all()` is cancelled, all unfinished tasks are cancelled and awaited. The `asyncio.CancelledError` exception is re-raised if no exception was raised by the tasks, otherwise the procedure described earlier is applied. If another cancellation occurs while still awaiting the tasks, tasks are cancelled and awaited again.
 
   Parameters
     items: The coroutines or tasks to wait for. The function returns immediately if the iterable is empty.

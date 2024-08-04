@@ -4,6 +4,8 @@ from asyncio import Event
 class LatchEvent:
   """
   An equivalent to `asyncio.Event` that can watched for both set and unset events.
+
+  TODO: Clarify what happens when calling set() and unset() one just after the other.
   """
 
   def __init__(self):

@@ -17,6 +17,8 @@ A _pool_ is a collection of tasks that run at the same time. If any task fails, 
 The easiest way to create a pool is to use the `Pool.open()` asynchronous context manager.
 
 ```py
+from aiotoolbox import Pool
+
 async def task1():
   ...
 
@@ -26,6 +28,21 @@ async def task2():
 async with Pool.open() as pool:
   pool.start_soon(task1())
   pool.start_soon(task2())
+```
+
+An alternative is to use the `Pool()` constructor and the `Pool.run()` method.
+
+```py
+pool = Pool()
+
+pool.spawn(task1())
+pool.spawn(task2())
+
+await pool.run()
+
+# Or if there is no event loop running
+
+asyncio.run(pool.run())
 ```
 
 

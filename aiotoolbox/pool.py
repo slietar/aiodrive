@@ -1,14 +1,16 @@
 import asyncio
 import contextlib
 import logging
+from pathlib import Path
 import sys
 import traceback
 from asyncio import Event, Future, Task
 from dataclasses import dataclass, field
 from traceback import FrameSummary, TracebackException
 from types import TracebackType
-from typing import Any, AsyncGenerator, Coroutine, Literal, Optional, Self
+from typing import Any, AsyncGenerator, Coroutine, Iterable, Literal, Optional, Self, cast
 
+from .ansi import EscapeCodes
 from .race import race
 
 
@@ -42,7 +44,6 @@ class HierarchyNode:
 class PoolTaskInfo:
   call_tb: Optional[TracebackType]
   depth: int
-  frame: Optional[FrameSummary]
   pool: 'Optional[Pool]' = None
 
 @dataclass(frozen=True, slots=True)
@@ -97,23 +98,57 @@ class Pool:
     self._status: PoolStatus = 'idle'
     self._tasks = dict[Task[None], PoolTaskInfo]()
 
-  def _prepare_format(self, path_filter: list[Self]):
-    node = HierarchyNode((self._name or '<Untitled pool>') + f' (cancellation_depth={self._cancellation_depth if self._cancellation_depth is not None else '<none>'})')
+  def _prepare_format(self, path_filter: list[Self], highlight: Self):
+    # An empty path_filter means no filtering
+
+    # TODO: Add pool status and planned tasks
+
+    node = HierarchyNode((EscapeCodes.underline if self == highlight else '') + (self._name or '<Untitled pool>') + f'{EscapeCodes.reset} {EscapeCodes.bright_black}(cancellation_depth={self._cancellation_depth if self._cancellation_depth is not None else '<none>'}){EscapeCodes.reset}')
 
     for task, task_info in self._tasks.items():
       if path_filter and (task_info.pool is not path_filter[0]):
         continue
 
+      if task_info.call_tb:
+        tb = last(walk_tb(task_info.call_tb))
+
+        frame_code = tb.tb_frame.f_code
+        trace_path_str = frame_code.co_filename
+        trace_funcname = frame_code.co_name
+        trace_lineno = tb.tb_lineno
+
+        if trace_path_str[0] != '<':
+          trace_path = Path(trace_path_str)
+
+          try:
+            trace_path_rel = trace_path.relative_to(Path.cwd())
+          except ValueError:
+            trace_location = f'{trace_path_str}:{trace_lineno}'
+          else:
+            trace_location = f'./{trace_path_rel}:{trace_lineno}'
+        else:
+          trace_location = trace_path_str
+
+        trace_str = f'Source: {trace_funcname}{'()' if trace_funcname[0] != '<' else ''} {EscapeCodes.bright_black}in {trace_location}{EscapeCodes.reset}'
+
+        # for line in traceback.format_tb(task_info.call_tb):
+        #   print(line, end='')
+
+        # print()
+        # print()
+        # print()
+      else:
+        trace_str = None
+
       task_node = HierarchyNode([
-        # TODO: Add task cancellation count
-        f'{task.get_name()} (depth={task_info.depth}, cancellation_count={task.cancelling()})',
-        *([f'Source: {frame.name}{'()' if frame.name[0] != '<' else ''} in {frame.filename}' + f':{frame.lineno}' if frame.lineno is not None else ''] if (frame := task_info.frame) else [])
+        f'{task.get_name()} {EscapeCodes.bright_black}(depth={task_info.depth}, cancellation_count={task.cancelling()}){EscapeCodes.reset}',
+        *([trace_str] if trace_str is not None else [])
       ])
 
       node.children.append(task_node)
 
-    #   if task_info.pool:
-    #     task_node.children.append(task_info.pool._prepare_format(path_filter[1:])) # type: ignore
+      if task_info.pool:
+        task_node.children.append(task_info.pool._prepare_format(path_filter[1:], highlight)) # type: ignore
 
     # if self._direct_pool:
     #   node.children.append(self._direct_pool._prepare_format(path_filter[1:]))
@@ -121,18 +156,19 @@ class Pool:
     return node
 
   def format(self, *, ancestors: Literal['all', 'none', 'path'] = 'path'):
-    pool_path = [self]
-    target_pool = self
+    pool_path = [self] # Path starting from self up to root pool
+    root_pool = self
 
     if ancestors != 'none':
-      while (parent_pool := target_pool._parent_pool):
+      while (parent_pool := root_pool._parent_pool):
         pool_path.append(parent_pool)
-        target_pool = parent_pool
+        root_pool = parent_pool
 
-    root_node = target_pool._prepare_format(pool_path[1::-1] if ancestors == 'path' else [])
+    # Exclude the first item, then reverse the list, same as pool_path[::-1][1:]
+    root_node = root_pool._prepare_format(pool_path[-2::-1] if ancestors == 'path' else [], self)
 
-    if (ancestors != 'none') and target_pool._owning_task:
-      root_node = HierarchyNode(target_pool._owning_task.get_name(), [root_node])
+    if (ancestors != 'none') and root_pool._owning_task:
+      root_node = HierarchyNode(root_pool._owning_task.get_name(), [root_node])
 
     return root_node.format()
 
@@ -221,7 +257,6 @@ class Pool:
                 current_exc = current_exc.__cause__
 
               current_exc.__cause__ = trace_exc
-
               exceptions.append(exc)
 
           self._logger.debug(f'Collected task {task.get_name()}')
@@ -245,6 +280,10 @@ class Pool:
     self._logger.debug('Closing pool')
     self._status = 'done'
 
+    if self._parent_pool is not None:
+      assert self._owning_task is not None
+      self._parent_pool._tasks[self._owning_task].pool = None
+
     if len(exceptions) >= 2:
       raise BaseExceptionGroup('Pool', exceptions)
     if exceptions:
@@ -264,8 +303,12 @@ class Pool:
       raise InvalidPoolStatusError('Attempting to run a pool that is not idle')
 
     self._owning_task = asyncio.current_task()
-    self._parent_pool = self.current()
+    self._parent_pool = self.try_current()
     self._status = 'running'
+
+    if self._parent_pool is not None:
+      assert self._owning_task is not None
+      self._parent_pool._tasks[self._owning_task].pool = self
 
     for spec in self._planned_tasks:
       self._spawn_from_spec(spec)
@@ -294,9 +337,8 @@ class Pool:
     # traceback.print_tb(create_tb(0))
 
     info = PoolTaskInfo(
-      call_tb=slice_tb_start(create_tb(_frame_skip), 0),
-      depth=depth,
-      frame=traceback.extract_stack(limit=(_frame_skip + 2))[0]
+      call_tb=slice_tb_start(create_tb(_frame_skip), 2),
+      depth=depth
     )
 
     spec = PoolTaskSpec(coro, name, info)
@@ -403,6 +445,25 @@ class Pool:
     Get the current pool.
 
     Returns
+      A `Pool` object.
+
+    Raises
+      RuntimeError: If there is no current task or if the current task is not running in a pool.
+    """
+
+    pool = cls.try_current()
+
+    if pool is None:
+      raise RuntimeError('No current pool')
+
+    return pool
+
+  @classmethod
+  def try_current(cls):
+    """
+    Get the current pool.
+
+    Returns
       A `Pool` object, or `None` if there is no current task or if the current task is not running in a pool.
     """
 
@@ -427,7 +488,7 @@ class Pool:
 
     pool = cls(name)
     pool._owning_task = current_task
-    pool._parent_pool = cls.current()
+    pool._parent_pool = cls.try_current()
 
     current_task_future = Future[None]()
     run_task = asyncio.create_task(pool.run(forever=forever))
@@ -525,6 +586,30 @@ def slice_tb_start(tb: Optional[TracebackType], size: int):
     current_tb = current_tb.tb_next
 
   return current_tb
+
+def walk_tb(tb: TracebackType):
+  current_tb = tb
+
+  while current_tb:
+    yield current_tb
+    current_tb = current_tb.tb_next
+
+
+class NoValueType:
+  pass
+
+NoValue = NoValueType()
+
+def last[T](iterable: Iterable[T], /, default: T | NoValueType = NoValue):
+  last_item = default
+
+  for item in iterable:
+    last_item = item
+
+  if isinstance(last_item, NoValueType):
+    raise ValueError('No items in iterable')
+
+  return cast(T, last_item)
 
 
 __all__ = [

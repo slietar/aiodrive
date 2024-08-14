@@ -1,10 +1,11 @@
 import asyncio
 import contextlib
+import logging
 import sys
 import traceback
 from asyncio import Event, Future, Task
 from dataclasses import dataclass, field
-from traceback import FrameSummary
+from traceback import FrameSummary, TracebackException
 from types import TracebackType
 from typing import Any, AsyncGenerator, Coroutine, Literal, Optional, Self
 
@@ -15,6 +16,9 @@ class InvalidPoolStatusError(RuntimeError):
   pass
 
 class LazyPoolTaskProtocolError(RuntimeError):
+  pass
+
+class TraceException(BaseException):
   pass
 
 
@@ -84,6 +88,7 @@ class Pool:
   def __init__(self, name: Optional[str] = None):
     self._cancellation_depth: Optional[int] = None
     self._direct_pool: Optional[Self] = None
+    self._logger = logging.getLogger('aiotoolbox')
     self._loop_wake_up_event = Event()
     self._name = name
     self._owning_task: Optional[Task[Any]] = None
@@ -93,7 +98,7 @@ class Pool:
     self._tasks = dict[Task[None], PoolTaskInfo]()
 
   def _prepare_format(self, path_filter: list[Self]):
-    node = HierarchyNode(self._name or "<Untitled pool>")
+    node = HierarchyNode((self._name or '<Untitled pool>') + f' (cancellation_depth={self._cancellation_depth if self._cancellation_depth is not None else '<none>'})')
 
     for task, task_info in self._tasks.items():
       if path_filter and (task_info.pool is not path_filter[0]):
@@ -101,17 +106,17 @@ class Pool:
 
       task_node = HierarchyNode([
         # TODO: Add task cancellation count
-        f"{task.get_name()}" + (f" (depth={task_info.depth})" if task_info.depth != 0 else str()),
-        *([f"Source: {frame.name}() in {frame.filename}" + (f":{frame.lineno}" if frame.lineno is not None else str())] if (frame := task_info.frame) else [])
+        f'{task.get_name()} (depth={task_info.depth}, cancellation_count={task.cancelling()})',
+        *([f'Source: {frame.name}{'()' if frame.name[0] != '<' else ''} in {frame.filename}' + f':{frame.lineno}' if frame.lineno is not None else ''] if (frame := task_info.frame) else [])
       ])
 
       node.children.append(task_node)
 
-      if task_info.pool:
-        task_node.children.append(task_info.pool._prepare_format(path_filter[1:])) # type: ignore
+    #   if task_info.pool:
+    #     task_node.children.append(task_info.pool._prepare_format(path_filter[1:])) # type: ignore
 
-    if self._direct_pool:
-      node.children.append(self._direct_pool._prepare_format(path_filter[1:]))
+    # if self._direct_pool:
+    #   node.children.append(self._direct_pool._prepare_format(path_filter[1:]))
 
     return node
 
@@ -149,22 +154,25 @@ class Pool:
     """
 
     self._cancellation_depth = self._max_task_depth()
+    self._logger.debug(f'Cancelling tasks with depth >= {self._cancellation_depth}')
 
     for task, task_info in self._tasks.items():
       if task_info.depth >= self._cancellation_depth:
         task.cancel()
+        self._logger.debug(f'Cancelling task {task.get_name()} with depth {task_info.depth} and new cancellation count {task.cancelling()}')
 
     if not self._tasks:
       # Wake up _wait() and have it return
       self._loop_wake_up_event.set()
 
   def _max_task_depth(self):
-    return max(0, *(task_info.depth for task_info in self._tasks.values()))
+    return max((0, *(task_info.depth for task_info in self._tasks.values())))
 
   def _spawn_from_spec(self, spec: PoolTaskSpec, /):
     assert self._status == 'running'
 
     task = asyncio.create_task(spec.coro, name=spec.name)
+    self._logger.debug(f'Spawning task {task.get_name()} with depth {spec.info.depth}')
 
     self._tasks[task] = spec.info
     self.__class__._pools_by_task[task] = self
@@ -204,8 +212,19 @@ class Pool:
           else:
             if exc:
               task_info = self._tasks[task]
-              join_tbs(task_info.call_tb, exc.__traceback__)
-              exceptions.append(exc.with_traceback(task_info.call_tb))
+              trace_exc = TraceException().with_traceback(task_info.call_tb)
+
+              # Find first exception in causality chain
+              current_exc = exc
+
+              while current_exc.__cause__ is not None:
+                current_exc = current_exc.__cause__
+
+              current_exc.__cause__ = trace_exc
+
+              exceptions.append(exc)
+
+          self._logger.debug(f'Collected task {task.get_name()}')
 
           del self._tasks[task]
           del self.__class__._pools_by_task[task]
@@ -223,6 +242,7 @@ class Pool:
       ):
         self._close()
 
+    self._logger.debug('Closing pool')
     self._status = 'done'
 
     if len(exceptions) >= 2:
@@ -271,10 +291,12 @@ class Pool:
       name: The task's name.
     """
 
+    # traceback.print_tb(create_tb(0))
+
     info = PoolTaskInfo(
-      call_tb=slice_tb_start(create_tb(_frame_skip), 9),
+      call_tb=slice_tb_start(create_tb(_frame_skip), 0),
       depth=depth,
-      frame=traceback.extract_stack(limit=(_frame_skip + 1))[0]
+      frame=traceback.extract_stack(limit=(_frame_skip + 2))[0]
     )
 
     spec = PoolTaskSpec(coro, name, info)
@@ -284,6 +306,7 @@ class Pool:
         raise InvalidPoolStatusError
       case 'idle':
         self._planned_tasks.append(spec)
+        self._logger.debug(f'Planning {f'task {name}' if name is not None else 'anonymous task'} with depth {depth}')
       case 'running':
         self._spawn_from_spec(spec)
 

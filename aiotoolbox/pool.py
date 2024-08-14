@@ -23,13 +23,13 @@ class HierarchyNode:
   name: list[str] | str
   children: list[Self | list[str]] = field(default_factory=list)
 
-  def format(self, *, prefix: str = str()):
+  def format(self, *, prefix: str = ''):
     name = self.name if isinstance(self.name, list) else [self.name]
 
-    return ("\n" + prefix).join(name) + str().join([
-      "\n" + prefix
-        + ("└── " if (last := (index == (len(self.children) - 1))) else "├── ")
-        + (child.format(prefix=(prefix + ("    " if last else "│   "))) if isinstance(child, HierarchyNode) else ("\n" + prefix + ("    " if last else "│   ")).join(child))
+    return ('\n' + prefix).join(name) + ''.join([
+      '\n' + prefix
+        + ('└── ' if (last := (index == (len(self.children) - 1))) else '├── ')
+        + (child.format(prefix=(prefix + ('    ' if last else '│   '))) if isinstance(child, HierarchyNode) else ('\n' + prefix + ('    ' if last else '│   ')).join(child))
         for index, child in enumerate(self.children)
     ])
 
@@ -47,7 +47,7 @@ class PoolTaskSpec:
   name: Optional[str]
   info: PoolTaskInfo
 
-PoolStatus = Literal['done', 'idle', 'running']
+type PoolStatus = Literal['done', 'idle', 'running']
 
 @dataclass(frozen=True, slots=True)
 class PoolTaskHandle:
@@ -84,12 +84,12 @@ class Pool:
   def __init__(self, name: Optional[str] = None):
     self._cancellation_depth: Optional[int] = None
     self._direct_pool: Optional[Self] = None
+    self._loop_wake_up_event = Event()
     self._name = name
     self._owning_task: Optional[Task[Any]] = None
     self._parent_pool: Optional[Self] = None
     self._planned_tasks = list[PoolTaskSpec]()
     self._status: PoolStatus = 'idle'
-    self._new_task_event = Event()
     self._tasks = dict[Task[None], PoolTaskInfo]()
 
   def _prepare_format(self, path_filter: list[Self]):
@@ -100,6 +100,7 @@ class Pool:
         continue
 
       task_node = HierarchyNode([
+        # TODO: Add task cancellation count
         f"{task.get_name()}" + (f" (depth={task_info.depth})" if task_info.depth != 0 else str()),
         *([f"Source: {frame.name}() in {frame.filename}" + (f":{frame.lineno}" if frame.lineno is not None else str())] if (frame := task_info.frame) else [])
       ])
@@ -147,20 +148,18 @@ class Pool:
     Calling this function multiple times will increment the cancellation counter of tasks already in the pool, and cancel newly-added tasks.
     """
 
-    if self._tasks:
-      self._cancellation_depth = self._max_task_depth()
+    self._cancellation_depth = self._max_task_depth()
 
-      for task, task_info in self._tasks.items():
-        if task_info.depth >= self._cancellation_depth:
-          task.cancel()
-    else:
-      self._cancellation_depth = 0
+    for task, task_info in self._tasks.items():
+      if task_info.depth >= self._cancellation_depth:
+        task.cancel()
 
-      # Wake up wait() and have it return
-      self._new_task_event.set()
+    if not self._tasks:
+      # Wake up _wait() and have it return
+      self._loop_wake_up_event.set()
 
   def _max_task_depth(self):
-    return max(task_info.depth for task_info in self._tasks.values())
+    return max(0, *(task_info.depth for task_info in self._tasks.values()))
 
   def _spawn_from_spec(self, spec: PoolTaskSpec, /):
     assert self._status == 'running'
@@ -171,18 +170,19 @@ class Pool:
     self.__class__._pools_by_task[task] = self
 
     # Wake up the wait() loop to start awaiting this task
-    self._new_task_event.set()
+    self._loop_wake_up_event.set()
 
   async def _wait(self, *, forever: bool):
     exceptions = list[BaseException]()
 
-    while True:
-      self._new_task_event.clear()
-
+    while self._tasks or (
+      forever and
+      (self._cancellation_depth is None)
+    ):
       try:
         await race(
           # Completed when a new task is added, necessary for this method to start awaiting that task
-          self._new_task_event.wait(),
+          self._loop_wake_up_event.wait(),
 
           # Completed when an existing task completes
           *([asyncio.wait(self._tasks, return_when=asyncio.FIRST_COMPLETED)] if self._tasks else [])
@@ -191,12 +191,15 @@ class Pool:
         # Reached when the call to _wait() is cancelled
         self._close()
 
+      self._loop_wake_up_event.clear()
+
       # Iterate over all tasks to remove them if they are done
       for task in list(self._tasks.keys()):
         if task.done():
           try:
             exc = task.exception()
           except asyncio.CancelledError:
+            # Reached when the pool is being cancelled
             pass
           else:
             if exc:
@@ -207,6 +210,9 @@ class Pool:
           del self._tasks[task]
           del self.__class__._pools_by_task[task]
 
+      # Close the pool
+      #   - if a task failed and the pool is not closing, as to not cancel tasks again;
+      #   - or if the pool is being closed but the cancellation depth is too high for remaining tasks.
       if (
         exceptions and
         (self._cancellation_depth is None)
@@ -216,9 +222,6 @@ class Pool:
         (self._max_task_depth() < self._cancellation_depth)
       ):
         self._close()
-
-      if (not self._tasks) and ((not forever) or (self._cancellation_depth is not None)):
-        break
 
     self._status = 'done'
 
@@ -238,7 +241,7 @@ class Pool:
     """
 
     if self._status != 'idle':
-      raise InvalidPoolStatusError
+      raise InvalidPoolStatusError('Attempting to run a pool that is not idle')
 
     self._owning_task = asyncio.current_task()
     self._parent_pool = self.current()

@@ -21,9 +21,7 @@ async def cancel_task(task: Task[Any], /):
     task.uncancel()
 
 
-T = TypeVar('T')
-
-async def shield(awaitable: Awaitable[T], /) -> T:
+async def shield[T](awaitable: Awaitable[T], /) -> T:
   """
   Shield and then await the provided awaitable from cancellation.
 

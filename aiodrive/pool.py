@@ -91,7 +91,7 @@ class Pool:
   def __init__(self, name: Optional[str] = None):
     self._cancellation_depth: Optional[int] = None
     self._context_task: Optional[Task[None]] = None # The fake task used to control the context, if any
-    self._logger = logging.getLogger('aiotoolbox')
+    self._logger = logging.getLogger('aiodrive')
     self._loop_wake_up_event = Event()
     self._name = name
     self._owning_task: Optional[Task[None]] = None # In contexts, corresponds to the root task

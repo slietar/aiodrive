@@ -1,12 +1,12 @@
-# aiotoolbox
+# aiodrive
 
-**aiotoolbox** is a Python package for working with asynchronous code powered by `asyncio`. It requires 3.11 or newer.
+**aiodrive** is a Python package for working with asynchronous code powered by `asyncio`. It only works on 3.12 and later.
 
 
 ## Installation
 
 ```sh
-$ pip install aiotoolbox
+$ pip install aiodrive
 ```
 
 
@@ -17,17 +17,17 @@ A _pool_ is a collection of tasks that run at the same time. If any task fails, 
 The easiest way to create a pool is to use the `Pool.open()` asynchronous context manager.
 
 ```py
-from aiotoolbox import Pool
+from aiodrive import Pool
 
-async def task1():
+async def job1():
   ...
 
-async def task2():
+async def job2():
   ...
 
 async with Pool.open() as pool:
-  pool.start_soon(task1())
-  pool.start_soon(task2())
+  pool.spawn(job1())
+  pool.spawn(job2())
 ```
 
 An alternative is to use the `Pool()` constructor and the `Pool.run()` method.
@@ -35,8 +35,8 @@ An alternative is to use the `Pool()` constructor and the `Pool.run()` method.
 ```py
 pool = Pool()
 
-pool.spawn(task1())
-pool.spawn(task2())
+pool.spawn(job1())
+pool.spawn(job2())
 
 await pool.run()
 

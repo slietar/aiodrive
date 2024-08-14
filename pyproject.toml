@@ -1,18 +1,17 @@
 [build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
-[project]
-name = "aiotoolbox"
-version = "0.0.0"
-
+[tool.poetry]
+name = "aiodrive"
+version = "0.1.0"
 description = "..."
+authors = ["Simon Liétar"]
 readme = "readme.md"
-license = { text = "EUPL-1.2" }
-requires-python = ">=3.9"
+packages = [{ include = "aiodrive" }]
+repository = "https://github.com/slietar/aiodrive"
+license = "EUPL-1.2"
 
-[project.urls]
-repository = "https://github.com/slietar/aiotoolbox"
-
-[tool.setuptools.packages.find]
-include = ["aiotoolbox"]
+[tool.poetry.dependencies]
+python = "^3.12"
+pygments = "^2.18.0"

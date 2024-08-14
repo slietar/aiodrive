@@ -1,7 +1,7 @@
 import asyncio
 from unittest import IsolatedAsyncioTestCase
 
-from aiotoolbox import Pool
+from aiodrive import Pool
 
 
 class TestPool(IsolatedAsyncioTestCase):

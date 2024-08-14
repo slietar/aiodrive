@@ -1,4 +1,4 @@
-class EscapeCodes:
+class EscapeSeq:
   bright_black = '\033[90m'
   italic = '\033[3m'
   red = '\033[31m'

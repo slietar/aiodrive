@@ -3,14 +3,12 @@ import contextlib
 import logging
 from pathlib import Path
 import sys
-import traceback
 from asyncio import Event, Future, Task
 from dataclasses import dataclass, field
-from traceback import FrameSummary, TracebackException
 from types import TracebackType
 from typing import Any, AsyncGenerator, Coroutine, Iterable, Literal, Optional, Self, cast
 
-from .ansi import EscapeCodes
+from .ansi import EscapeSeq
 from .race import race
 
 
@@ -84,16 +82,19 @@ class Pool:
   An object used to manage tasks created in a common context.
   """
 
-  # Pool owning each task, as seen by the user.
-  _pools_by_task = dict[Task[None], Self]()
+  # Maps which pool a task belongs to
+  _pools_by_task_regular = dict[Task[None], Self]()
+
+  # Same but for the task of pools opened with contexts
+  _pools_by_task_context = dict[Task[None], Self]()
 
   def __init__(self, name: Optional[str] = None):
     self._cancellation_depth: Optional[int] = None
-    self._direct_pool: Optional[Self] = None
+    self._context_task: Optional[Task[None]] = None # The fake task used to control the context, if any
     self._logger = logging.getLogger('aiotoolbox')
     self._loop_wake_up_event = Event()
     self._name = name
-    self._owning_task: Optional[Task[Any]] = None
+    self._owning_task: Optional[Task[None]] = None # In contexts, corresponds to the root task
     self._parent_pool: Optional[Self] = None
     self._planned_tasks = list[PoolTaskSpec]()
     self._status: PoolStatus = 'idle'
@@ -104,7 +105,7 @@ class Pool:
 
     # TODO: Add pool status and planned tasks
 
-    node = HierarchyNode((EscapeCodes.underline if self == highlight else '') + (self._name or '<Untitled pool>') + f'{EscapeCodes.reset} {EscapeCodes.bright_black}(cancellation_depth={self._cancellation_depth if self._cancellation_depth is not None else '<none>'}){EscapeCodes.reset}')
+    node = HierarchyNode((EscapeSeq.underline if self == highlight else '') + (self._name or '<Untitled pool>') + f'{EscapeSeq.reset} {EscapeSeq.bright_black}(cancellation_depth={self._cancellation_depth if self._cancellation_depth is not None else '<none>'}){EscapeSeq.reset}')
 
     for task, task_info in self._tasks.items():
       if path_filter and (task_info.pool is not path_filter[0]):
@@ -130,34 +131,25 @@ class Pool:
         else:
           trace_location = trace_path_str
 
-        trace_str = f'Source: {trace_funcname}{'()' if trace_funcname[0] != '<' else ''} {EscapeCodes.bright_black}in {trace_location}{EscapeCodes.reset}'
-
-        # for line in traceback.format_tb(task_info.call_tb):
-        #   print(line, end='')
-
-        # print()
-        # print()
-        # print()
+        trace_str = f'Source: {trace_funcname}{'()' if trace_funcname[0] != '<' else ''} {EscapeSeq.bright_black}in {trace_location}{EscapeSeq.reset}'
       else:
         trace_str = None
 
       task_node = HierarchyNode([
-        f'{task.get_name()} {EscapeCodes.bright_black}(depth={task_info.depth}, cancellation_count={task.cancelling()}){EscapeCodes.reset}',
+        f'{task.get_name()} {EscapeSeq.bright_black}(depth={task_info.depth}, cancellation_count={task.cancelling()}){EscapeSeq.reset}',
         *([trace_str] if trace_str is not None else [])
       ])
 
       node.children.append(task_node)
 
-      if task_info.pool:
+      if task_info.pool is not None:
         task_node.children.append(task_info.pool._prepare_format(path_filter[1:], highlight)) # type: ignore
-
-    # if self._direct_pool:
-    #   node.children.append(self._direct_pool._prepare_format(path_filter[1:]))
 
     return node
 
   def format(self, *, ancestors: Literal['all', 'none', 'path'] = 'path'):
-    pool_path = [self] # Path starting from self up to root pool
+    # Path starting from self up to root pool
+    pool_path = [self]
     root_pool = self
 
     if ancestors != 'none':
@@ -172,13 +164,6 @@ class Pool:
       root_node = HierarchyNode(root_pool._owning_task.get_name(), [root_node])
 
     return root_node.format()
-
-  def __len__(self):
-    """
-    Get the number of tasks in the pool.
-    """
-
-    return len(self._tasks)
 
   def __repr__(self):
     return f"{self.__class__.__name__}" + (f"(name={self._name!r})" if self._name else "()")
@@ -212,7 +197,7 @@ class Pool:
     self._logger.debug(f'Spawning task {task.get_name()} with depth {spec.info.depth}')
 
     self._tasks[task] = spec.info
-    self.__class__._pools_by_task[task] = self
+    self.__class__._pools_by_task_regular[task] = self
 
     # Wake up the wait() loop to start awaiting this task
     self._loop_wake_up_event.set()
@@ -267,7 +252,7 @@ class Pool:
           self._logger.debug(f'Collected task {task.get_name()}')
 
           del self._tasks[task]
-          del self.__class__._pools_by_task[task]
+          del self.__class__._pools_by_task_regular[task]
 
       # Close the pool
       #   - if a task failed and the pool is not closing, as to not cancel tasks again;
@@ -286,8 +271,7 @@ class Pool:
     self._logger.debug('Closing pool')
     self._status = 'done'
 
-    if self._parent_pool is not None:
-      assert self._owning_task is not None
+    if self._owning_task and self._parent_pool and (self._parent_pool == self._pools_by_task_regular.get(self._owning_task)):
       self._parent_pool._tasks[self._owning_task].pool = None
 
     if len(exceptions) >= 2:
@@ -312,8 +296,7 @@ class Pool:
     self._parent_pool = self.try_current()
     self._status = 'running'
 
-    if self._parent_pool is not None:
-      assert self._owning_task is not None
+    if self._owning_task and self._parent_pool and (self._parent_pool == self._pools_by_task_regular.get(self._owning_task)):
       self._parent_pool._tasks[self._owning_task].pool = self
 
     for spec in self._planned_tasks:
@@ -340,8 +323,6 @@ class Pool:
       depth: The task's depth. Tasks with a lower depth will only be cancelled once all tasks with a higher depth have finished.
       name: The task's name.
     """
-
-    # traceback.print_tb(create_tb(0))
 
     info = PoolTaskInfo(
       call_tb=slice_tb_start(create_tb(_frame_skip), 2),
@@ -476,7 +457,11 @@ class Pool:
     """
 
     current_task = asyncio.current_task()
-    return current_task and cls._pools_by_task.get(current_task)
+    return current_task and (
+      # First check transient pools because a context could have been created in a task running in a pool
+      cls._pools_by_task_context.get(current_task) or
+      cls._pools_by_task_regular.get(current_task)
+    )
 
   @classmethod
   @contextlib.asynccontextmanager
@@ -491,13 +476,30 @@ class Pool:
       name: The pool's name.
     """
 
-    current_task = asyncio.current_task()
-    assert current_task
+
+    # Create and start the pool
 
     pool = cls(name)
 
     # Sets attributes _owning_task and _parent_pool correctly since run() is called before the task is created
     run_task = asyncio.create_task(pool.run(forever=forever))
+
+    root_task = pool._owning_task
+    assert root_task
+
+
+    # Magic
+
+    # Ran afterwards such that run() can obtain the root task and the correct parent pool instead of the new one
+    old_context_task_pool = cls._pools_by_task_context.get(root_task)
+    cls._pools_by_task_context[root_task] = pool
+
+    if old_context_task_pool:
+      assert old_context_task_pool._context_task
+      old_context_task_pool._tasks[old_context_task_pool._context_task].pool = pool
+
+
+    # Build the fake task
 
     current_task_future = Future[None]()
 
@@ -514,22 +516,16 @@ class Pool:
             raise
 
           # Otherwise, the pool is being closed
-          current_task.cancel()
+          root_task.cancel()
         else:
           if current_task_future.done():
             break
 
     pool.spawn(current_task_handler(), _frame_skip=2, _skip_tb_trace=True, depth=-1, name='<Asynchronous context manager>')
+    pool._context_task = last(pool._tasks.keys())
 
-    # current_task_old_pool = cls._pools_by_task.get(current_task)
-    # cls._pools_by_task[current_task] = pool
 
-    # if current_task_old_pool:
-    #   if current_task is not current_task_old_pool._owning_task:
-    #     current_task_old_pool._tasks[current_task].pool = pool
-    #   else:
-    #     assert not current_task_old_pool._direct_pool
-    #     current_task_old_pool._direct_pool = pool
+    # Yield the pool
 
     try:
       yield pool
@@ -538,23 +534,18 @@ class Pool:
     else:
       current_task_future.set_result(None)
 
-    # if current_task_old_pool is not None:
-    #   cls._pools_by_task[current_task] = current_task_old_pool
-    # else:
-    #   del cls._pools_by_task[current_task]
+
+    # Cleanup
 
     try:
       await run_task
-    # except Exception as e:
-    #   raise e.with_traceback(slice_tb_start(e.__traceback__, 2))
     finally:
-      pass
-
-      # if current_task_old_pool:
-      #   if current_task is not current_task_old_pool._owning_task:
-      #     current_task_old_pool._tasks[current_task].pool = None
-      #   else:
-      #     current_task_old_pool._direct_pool = None
+      if old_context_task_pool:
+        assert old_context_task_pool._context_task
+        cls._pools_by_task_context[root_task] = old_context_task_pool
+        old_context_task_pool._tasks[old_context_task_pool._context_task].pool = None
+      else:
+        del cls._pools_by_task_context[root_task]
 
 
 # Utility functions

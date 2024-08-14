@@ -25,7 +25,7 @@ async def shield[T](awaitable: Awaitable[T], /) -> T:
   """
   Shield and then await the provided awaitable from cancellation.
 
-  The provided awaitable is wrapped in a task and then awaited with `asyncio.shield()`. If the call to `shield()` is cancelled, the task is awaited again and the exception is then re-raised. If the call is cancelled again, the task is cancelled as normal.
+  The provided awaitable is wrapped in a task and then awaited with `asyncio.shield()`. If the call to `shield()` is cancelled, the task is awaited again and the exception is then re-raised. If the call is cancelled again, the task is cancelled without shielding.
 
   Returns
     The task's result, assuming no cancellation occurs.

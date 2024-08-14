@@ -45,6 +45,7 @@ class PoolTaskInfo:
   call_tb: Optional[TracebackType]
   depth: int
   pool: 'Optional[Pool]' = None
+  skip_tb_trace: bool = False
 
 @dataclass(frozen=True, slots=True)
 class PoolTaskSpec:
@@ -234,6 +235,7 @@ class Pool:
       except asyncio.CancelledError:
         # Reached when the call to _wait() is cancelled
         self._close()
+        continue
 
       self._loop_wake_up_event.clear()
 
@@ -248,15 +250,18 @@ class Pool:
           else:
             if exc:
               task_info = self._tasks[task]
-              trace_exc = TraceException().with_traceback(task_info.call_tb)
 
-              # Find first exception in causality chain
-              current_exc = exc
+              if task_info.call_tb and (not task_info.skip_tb_trace):
+                trace_exc = TraceException().with_traceback(task_info.call_tb)
 
-              while current_exc.__cause__ is not None:
-                current_exc = current_exc.__cause__
+                # Find first exception in causality chain
+                current_exc = exc
 
-              current_exc.__cause__ = trace_exc
+                while current_exc.__cause__ is not None:
+                  current_exc = current_exc.__cause__
+
+                current_exc.__cause__ = trace_exc
+
               exceptions.append(exc)
 
           self._logger.debug(f'Collected task {task.get_name()}')
@@ -275,6 +280,7 @@ class Pool:
         (self._cancellation_depth is not None) and
         (self._max_task_depth() < self._cancellation_depth)
       ):
+        # An alternative here could be to set _cancellation_depth to the minimal depth of failed tasks
         self._close()
 
     self._logger.debug('Closing pool')
@@ -293,7 +299,7 @@ class Pool:
     """
     Run the pool.
 
-    Cancelling this call cancels all tasks in the pool.
+    Cancelling this call cancels all tasks in the pool. The pool will be attached to the current task that called this method, not to the task executing the resulting coroutine.
 
     Parameters
       forever: Whether to keep the pool running once all tasks have finished.
@@ -322,6 +328,7 @@ class Pool:
     coro: Coroutine[Any, Any, None],
     /, *,
     _frame_skip: int = 0,
+    _skip_tb_trace: bool = False,
     depth: int = 0,
     name: Optional[str] = None,
   ):
@@ -338,7 +345,8 @@ class Pool:
 
     info = PoolTaskInfo(
       call_tb=slice_tb_start(create_tb(_frame_skip), 2),
-      depth=depth
+      depth=depth,
+      skip_tb_trace=_skip_tb_trace
     )
 
     spec = PoolTaskSpec(coro, name, info)
@@ -487,11 +495,11 @@ class Pool:
     assert current_task
 
     pool = cls(name)
-    pool._owning_task = current_task
-    pool._parent_pool = cls.try_current()
+
+    # Sets attributes _owning_task and _parent_pool correctly since run() is called before the task is created
+    run_task = asyncio.create_task(pool.run(forever=forever))
 
     current_task_future = Future[None]()
-    run_task = asyncio.create_task(pool.run(forever=forever))
 
     async def current_task_handler():
       while True:
@@ -511,17 +519,17 @@ class Pool:
           if current_task_future.done():
             break
 
-    pool.spawn(current_task_handler(), _frame_skip=2, name='<Asynchronous context manager>')
+    pool.spawn(current_task_handler(), _frame_skip=2, _skip_tb_trace=True, depth=-1, name='<Asynchronous context manager>')
 
-    current_task_old_pool = cls._pools_by_task.get(current_task)
-    cls._pools_by_task[current_task] = pool
+    # current_task_old_pool = cls._pools_by_task.get(current_task)
+    # cls._pools_by_task[current_task] = pool
 
-    if current_task_old_pool:
-      if current_task is not current_task_old_pool._owning_task:
-        current_task_old_pool._tasks[current_task].pool = pool
-      else:
-        assert not current_task_old_pool._direct_pool
-        current_task_old_pool._direct_pool = pool
+    # if current_task_old_pool:
+    #   if current_task is not current_task_old_pool._owning_task:
+    #     current_task_old_pool._tasks[current_task].pool = pool
+    #   else:
+    #     assert not current_task_old_pool._direct_pool
+    #     current_task_old_pool._direct_pool = pool
 
     try:
       yield pool
@@ -530,21 +538,23 @@ class Pool:
     else:
       current_task_future.set_result(None)
 
-    if current_task_old_pool is not None:
-      cls._pools_by_task[current_task] = current_task_old_pool
-    else:
-      del cls._pools_by_task[current_task]
+    # if current_task_old_pool is not None:
+    #   cls._pools_by_task[current_task] = current_task_old_pool
+    # else:
+    #   del cls._pools_by_task[current_task]
 
     try:
       await run_task
-    except Exception as e:
-      raise e.with_traceback(slice_tb_start(e.__traceback__, 2))
+    # except Exception as e:
+    #   raise e.with_traceback(slice_tb_start(e.__traceback__, 2))
     finally:
-      if current_task_old_pool:
-        if current_task is not current_task_old_pool._owning_task:
-          current_task_old_pool._tasks[current_task].pool = None
-        else:
-          current_task_old_pool._direct_pool = None
+      pass
+
+      # if current_task_old_pool:
+      #   if current_task is not current_task_old_pool._owning_task:
+      #     current_task_old_pool._tasks[current_task].pool = None
+      #   else:
+      #     current_task_old_pool._direct_pool = None
 
 
 # Utility functions

@@ -1,7 +1,8 @@
 from asyncio import Task
 import asyncio
 import contextlib
-from typing import Any, Awaitable, TypeVar
+from dataclasses import dataclass
+from typing import Any, Awaitable, Coroutine, TypeVar
 
 
 async def cancel_task(task: Task[Any], /):
@@ -20,6 +21,29 @@ async def cancel_task(task: Task[Any], /):
     await task
   except asyncio.CancelledError:
     task.uncancel()
+
+
+@dataclass(slots=True)
+class AwaitableHint:
+  hint: Any
+
+  def __await__(self):
+    yield self.hint
+
+async def primed(coro: Coroutine, start_hint: Any):
+  hint = start_hint
+
+  while True:
+    await AwaitableHint(hint)
+
+    try:
+      hint = await coro.send(None)
+    except StopIteration as e:
+      return e.value
+
+def prime[T](coro: Coroutine[Any, Any, T], /) -> Awaitable[T]:
+  hint = coro.send(None)
+  return primed(coro, hint)
 
 
 async def shield[T](awaitable: Awaitable[T], /) -> T:
@@ -86,5 +110,7 @@ async def timeout(seconds: float, /):
 
 __all__ = [
   'cancel_task',
-  'shield'
+  'prime',
+  'shield',
+  'timeout'
 ]

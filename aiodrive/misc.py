@@ -1,5 +1,6 @@
 from asyncio import Task
 import asyncio
+import contextlib
 from typing import Any, Awaitable, TypeVar
 
 
@@ -41,6 +42,46 @@ async def shield[T](awaitable: Awaitable[T], /) -> T:
   except asyncio.CancelledError:
     await task
     raise
+
+
+@contextlib.asynccontextmanager
+async def timeout(seconds: float, /):
+  """
+  A context manager that raises a `TimeoutError` if the block takes longer than the provided time.
+
+  Parameters
+    seconds: The time in seconds before raising a `TimeoutError`.
+
+  Raises
+    TimeoutError: If the block takes longer than the provided time.
+  """
+
+  current_task = asyncio.current_task()
+  assert current_task
+
+  async def timeout_coro():
+    await asyncio.sleep(seconds)
+    current_task.cancel()
+
+  cancelled = False
+  timeout_task = asyncio.create_task(timeout_coro())
+
+  try:
+    yield
+  except asyncio.CancelledError:
+    cancelled = True
+  finally:
+    if not timeout_task.done():
+      timeout_task.cancel()
+
+    try:
+      await timeout_task
+    except asyncio.CancelledError:
+      current_task.uncancel()
+      raise TimeoutError from None
+
+    if cancelled:
+      raise asyncio.CancelledError
 
 
 __all__ = [

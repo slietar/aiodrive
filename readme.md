@@ -71,7 +71,9 @@ online_event.unset()
 
 - `aexit_handler()` – Decorate an asynchronous context manager's `__aexit__()` method for it to collect both exceptions raised inside the method and by the context manager's consumer.
 - `cancel_task()` – Cancel a task and await it.
+- `prime()` – Immediately execute as much as code as possible of a coroutine before it is awaited.
 - `race()` – Run multiple tasks and return the result of the first one to finish, after having cancelled and awaited the other tasks.
 - `shield()` – Shield a task against cancellation and await it, unlike `asyncio.shield()`.
+- `timeout()` – Run a block of code with a timeout, unlike `asyncio.wait_for()` which only supports a single awaitable.
 - `try_all()` – Run multiple tasks and cancel those still running if one of them raises an exception.
 - `wait_all()` – Run multiple tasks without cancelling any if one raises an exception.

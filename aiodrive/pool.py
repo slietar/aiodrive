@@ -188,7 +188,7 @@ class Pool:
       self._loop_wake_up_event.set()
 
   def _max_task_depth(self):
-    return max((0, *(task_info.depth for task_info in self._tasks.values())))
+    return max((-1, *(task_info.depth for task_info in self._tasks.values())))
 
   def _spawn_from_spec(self, spec: PoolTaskSpec, /):
     assert self._status == 'running'
@@ -236,7 +236,8 @@ class Pool:
             if exc:
               task_info = self._tasks[task]
 
-              if task_info.call_tb and (not task_info.skip_tb_trace):
+              # Avoid adding a TraceException to BaseException instances
+              if task_info.call_tb and (not task_info.skip_tb_trace) and isinstance(exc, Exception):
                 trace_exc = TraceException().with_traceback(task_info.call_tb)
 
                 # Find first exception in causality chain
@@ -596,6 +597,7 @@ def walk_tb(tb: TracebackType):
     current_tb = current_tb.tb_next
 
 
+@dataclass(slots=True)
 class NoValueType:
   pass
 

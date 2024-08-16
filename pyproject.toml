@@ -14,4 +14,3 @@ license = "EUPL-1.2"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-pygments = "^2.18.0"

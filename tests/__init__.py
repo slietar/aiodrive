@@ -1,7 +1,7 @@
 import asyncio
 from unittest import IsolatedAsyncioTestCase
 
-from aiodrive import Pool
+from aiodrive import Pool, prime
 
 
 class TestPool(IsolatedAsyncioTestCase):
@@ -18,3 +18,22 @@ class TestPool(IsolatedAsyncioTestCase):
     pool = Pool()
     await pool.run()
     self.assertRaises(Exception, pool.run)
+
+
+class TestPrime(IsolatedAsyncioTestCase):
+  async def test_basic(self):
+    running = False
+
+    async def func():
+      nonlocal running
+      running = True
+
+      await asyncio.sleep(0.1)
+
+    primed_coro = prime(func())
+
+    self.assertTrue(running)
+    await primed_coro
+
+    with self.assertRaises(RuntimeError):
+      await primed_coro

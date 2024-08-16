@@ -1,8 +1,8 @@
-from asyncio import Task
 import asyncio
 import contextlib
-from dataclasses import dataclass
-from typing import Any, Awaitable, Coroutine, TypeVar
+from asyncio import Task
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Coroutine
 
 
 async def cancel_task(task: Task[Any], /):
@@ -24,26 +24,43 @@ async def cancel_task(task: Task[Any], /):
 
 
 @dataclass(slots=True)
-class AwaitableHint:
+class Primed[T]:
+  awaited: bool = field(default=False, init=False)
+  coro: Coroutine[Any, Any, T]
   hint: Any
 
   def __await__(self):
-    yield self.hint
+    if self.awaited:
+      raise RuntimeError('Primed coroutine already awaited')
 
-async def primed(coro: Coroutine, start_hint: Any):
-  hint = start_hint
+    self.awaited = True
 
-  while True:
-    await AwaitableHint(hint)
+    hint = self.hint
+    self.hint = None
 
-    try:
-      hint = await coro.send(None)
-    except StopIteration as e:
-      return e.value
+    yield hint
+
+    while True:
+      try:
+        hint = self.coro.send(None)
+      except StopIteration as e:
+        return e.value
+      else:
+        yield hint
 
 def prime[T](coro: Coroutine[Any, Any, T], /) -> Awaitable[T]:
+  """
+  Prime a coroutine such that as much as possible is executed immediately rather than when the coroutine is awaited.
+
+  Returns
+    An awaitable that can be awaited to execute the coroutine.
+
+  Raises
+    RuntimeError: If the coroutine has already been awaited.
+  """
+
   hint = coro.send(None)
-  return primed(coro, hint)
+  return Primed(coro, hint)
 
 
 async def shield[T](awaitable: Awaitable[T], /) -> T:

@@ -1,17 +1,15 @@
 import contextlib
 from threading import Lock
-from typing import Callable, TypeVar
+from typing import Callable
 
-
-T = TypeVar("T")
 
 @contextlib.contextmanager
-def ResourceFactory(generate: Callable[[], T], /):
+def ResourceFactory[T](generate: Callable[[], T], /):
     instance = ResourceFactoryInstance(generate)
     yield instance
     assert len(instance._unused_resources) == len(instance._resources)
 
-class ResourceFactoryInstance:
+class ResourceFactoryInstance[T]:
     def __init__(self, generate: Callable[[], T], /):
         self._generate = generate
         self._resources = dict[int, T]()

@@ -79,10 +79,3 @@ async with cancel_upon(
 async with asyncio.timeout(5):
     ...
 ```
-
-
-### Calling a function every x seconds, taking into account the execution time of that function
-
-### to_thread but wait for the thread to finish
-### to_thread, passing a function that tells whether the task was cancelled - also allowing to use that function as a loop iterable which consumes another iterable
-### logging + handle_signals

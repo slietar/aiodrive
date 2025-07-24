@@ -1,16 +1,17 @@
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["oryn~=1.2"]
+build-backend = "oryn"
 
-[tool.poetry]
+[project]
 name = "aiodrive"
-version = "0.1.0"
-description = "..."
-authors = ["Simon Liétar"]
-readme = "readme.md"
-packages = [{ include = "aiodrive" }]
-repository = "https://github.com/slietar/aiodrive"
+version = "0.0"
+description = "Collection of utilies for working with asynchronous Python code"
 license = "EUPL-1.2"
+readme = "readme.md"
+requires-python = "~=3.12.0"
 
-[tool.poetry.dependencies]
-python = "^3.12"
+[project.urls]
+Repository = "https://github.com/slietar/aiodrive"
+
+[tool.oryn]
+include = ["src/*"]

@@ -7,9 +7,6 @@ import traceback
 
 from .pool import Pool
 
-sys.path.append('/Users/simon/Developer/py-exc-hook')
-__import__('dexc').install()
-
 
 # logging.basicConfig(level=logging.DEBUG)
 

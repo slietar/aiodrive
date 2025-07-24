@@ -1,8 +1,3 @@
+uv.lock
 __pycache__
-.venv
-*copy*
-/dist
-node_modules
-package-lock.json
-poetry.lock
-tmp
+*.egg-info

@@ -9,7 +9,12 @@ class BatchWorker[K, R]:
   """
   A utility class to batch an operation.
 
-  Batched items are pushed to the batch queue. using `write()`. If there is no batch currently being committed, all items in the batch queue are committed by providing a list to the committer function. If all writes are cancelled, the committer function is not called, or cancelled if is already running. The committer function returns a list of results, which are returned to the corresponding `write()` calls.
+  Batched items are pushed to the batch queue. using `write()`. If there is no
+  batch currently being committed, all items in the batch queue are committed by
+  providing a list to the committer function. If all writes are cancelled, the
+  committer function is not called, or cancelled if is already running. The
+  committer function returns a list of results, which are returned to the
+  corresponding `write()` calls.
   """
 
   def __init__(self, commit: Callable[[list[K]], Awaitable[list[R]]], *, dispatch_exceptions: bool = False):

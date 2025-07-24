@@ -7,20 +7,21 @@ from typing import Any, Awaitable, Coroutine
 
 async def cancel_task(task: Task[Any], /):
   """
-  Silently cancel and then await the provided task, if any.
+  Silently cancel and then await the provided task, if it is not done already.
 
-  The task is cancelled and then awaited. The `asyncio.CancelledError` instance raised by the task is ignored.
+  If not done, the task is cancelled and then awaited. The `asyncio.CancelledError` instance raised by the task is ignored. If the task raises an exception other than `asyncio.CancelledError`, it is re-raised, but only if the task was not done (~~~). TODO: Improve
 
   Parameters
     task: The task to cancel, or `None`.
   """
 
-  task.cancel()
+  if not task.done():
+    task.cancel()
 
-  try:
-    await task
-  except asyncio.CancelledError:
-    task.uncancel()
+    try:
+      await task
+    except asyncio.CancelledError:
+      task.uncancel()
 
 
 @dataclass(slots=True)
@@ -48,19 +49,23 @@ class Primed[T]:
       else:
         yield hint
 
-def prime[T](coro: Coroutine[Any, Any, T], /) -> Awaitable[T]:
+def prime[T](coro: Coroutine[Any, Any, T], /) -> Coroutine[Any, Any, T]:
   """
   Prime a coroutine such that as much as possible is executed immediately rather than when the coroutine is awaited.
 
   Returns
-    An awaitable that can be awaited to execute the coroutine.
+    A coroutine that can be awaited to execute the input coroutine.
 
   Raises
     RuntimeError: If the coroutine has already been awaited.
   """
 
   hint = coro.send(None)
-  return Primed(coro, hint)
+
+  async def a():
+    return await Primed(coro, hint)
+
+  return a()
 
 
 async def shield[T](awaitable: Awaitable[T], /) -> T:

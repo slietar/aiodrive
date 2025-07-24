@@ -12,6 +12,9 @@ from .ansi import EscapeSeq
 from .race import race
 
 
+# TODO: Warn when a task should have raised a asyncio.CancelledError but did not
+
+
 class InvalidPoolStatusError(RuntimeError):
   pass
 
@@ -203,6 +206,7 @@ class Pool:
     self._loop_wake_up_event.set()
 
   async def _wait(self, *, forever: bool):
+    cancelling = False
     exceptions = list[BaseException]()
 
     while self._tasks or (
@@ -219,6 +223,7 @@ class Pool:
         )
       except asyncio.CancelledError:
         # Reached when the call to _wait() is cancelled
+        cancelling = True
         self._close()
         continue
 
@@ -230,7 +235,7 @@ class Pool:
           try:
             exc = task.exception()
           except asyncio.CancelledError:
-            # Reached when the pool is being cancelled
+            # Reached when the pool is being closed
             pass
           else:
             if exc:
@@ -279,6 +284,8 @@ class Pool:
       raise BaseExceptionGroup('Pool', exceptions)
     if exceptions:
       raise exceptions[0]
+    if cancelling:
+      raise asyncio.CancelledError
 
   def run(self, *, forever: bool = False):
     """
@@ -502,24 +509,22 @@ class Pool:
 
     # Build the fake task
 
-    current_task_future = Future[None]()
+    yield_future = Future[None]()
 
     async def current_task_handler():
       while True:
         try:
-          await asyncio.shield(current_task_future)
+          await asyncio.shield(yield_future)
         except asyncio.CancelledError:
           # If the task was cancelled from the outside
-          if current_task_future.done():
-            if pool._cancellation_depth is None:
-              pool._close()
-
+          if yield_future.done():
+            run_task.cancel()
             raise
 
           # Otherwise, the pool is being closed
           root_task.cancel()
         else:
-          if current_task_future.done():
+          if yield_future.done():
             break
 
     pool.spawn(current_task_handler(), _frame_skip=2, _skip_tb_trace=True, depth=-1, name='<Asynchronous context manager>')
@@ -531,9 +536,9 @@ class Pool:
     try:
       yield pool
     except BaseException as e:
-      current_task_future.set_exception(e)
+      yield_future.set_exception(e)
     else:
-      current_task_future.set_result(None)
+      yield_future.set_result(None)
 
 
     # Cleanup

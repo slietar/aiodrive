@@ -4,7 +4,7 @@ build-backend = "oryn"
 
 [project]
 name = "aiodrive"
-version = "0.0"
+version = "1.0"
 description = "Collection of utilies for working with asynchronous Python code"
 license = "EUPL-1.2"
 readme = "readme.md"

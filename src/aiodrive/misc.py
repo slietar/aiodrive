@@ -1,8 +1,9 @@
 import asyncio
 import contextlib
 from asyncio import Task
+from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Coroutine
+from typing import Any
 
 
 async def cancel_task(task: Task[Any], /):
@@ -90,6 +91,42 @@ async def shield[T](awaitable: Awaitable[T], /) -> T:
     raise
 
 
+async def cleanup_shield[T](awaitable: Awaitable[T], /) -> T:
+  """
+  Await the provided awaitable, shielding it if the current task has not been
+  cancelled yet.
+
+  If the call is cancelled while the awaitable is shielded, it is awaited again
+  without shielding.
+
+  Returns
+  -------
+  T
+    The result of the awaitable.
+  """
+
+  current_task = asyncio.current_task()
+  assert current_task is not None
+
+  if current_task.cancelled():
+    await awaitable
+
+  task = asyncio.ensure_future(awaitable)
+
+  try:
+    return await asyncio.shield(task)
+  except asyncio.CancelledError:
+    # If the task is not done, the call to asyncio.shield() was cancelled and
+    # the task must be awaited again. Otherwise, the task raised a
+    # CancelledError for some other reason and is thus finished.
+    if not task.done():
+      task.cancel()
+      await task
+
+    raise
+
+
+
 @contextlib.asynccontextmanager
 async def timeout(seconds: float, /):
   """
@@ -134,5 +171,5 @@ __all__ = [
   'cancel_task',
   'prime',
   'shield',
-  'timeout'
+  'timeout',
 ]

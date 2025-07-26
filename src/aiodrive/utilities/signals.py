@@ -1,25 +1,42 @@
 import asyncio
 import contextlib
+import functools
 import signal
-from collections.abc import AsyncIterator, Collection
+from asyncio import Future
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from signal import Signals as SignalCode
+from typing import Optional
+
+
+@dataclass(slots=True)
+class SignalHandledException(Exception):
+    signal: signal.Signals
 
 
 @contextlib.asynccontextmanager
-async def handle_signals(sig_names: Collection[str], /) -> AsyncIterator[None]:
+async def handle_signals(*signal_codes: SignalCode) -> AsyncIterator[None]:
     """
     Handle specified signals by cancelling the current task.
 
     If any of the specified signals is received, the current task is cancelled
-    and the signals are no longer listened for. The `asyncio.CancelledError`
-    exception is not propagated to the caller unless the current task has been
-    cancelled again.
+    and the signals are no longer listened for.
 
     If the call is cancelled, the signals stop being listened for.
 
+    No other signal listeners for the same codes may be registered for the
+    current event loop.
+
     Parameters
     ----------
-    sig_names
-        The signal names to handle e.g. `('SIGINT',)`.
+    signal_codes
+        The signal codes to handle e.g. `(signal.SIGINT,)`.
+
+    Raises
+    ------
+    SignalHandledException
+        If a signal is handled and no other other cancellation of the current
+        task occured.
     """
 
     loop = asyncio.get_event_loop()
@@ -27,42 +44,54 @@ async def handle_signals(sig_names: Collection[str], /) -> AsyncIterator[None]:
     task = asyncio.current_task()
     assert task is not None
 
-    # TODO: Improve
+    handled_signal_code: Optional[SignalCode] = None
 
-    for signame in sig_names:
-        loop.add_signal_handler(getattr(signal, signame), task.cancel)
+    def callback(signal_code: SignalCode):
+        nonlocal handled_signal_code
+        assert handled_signal_code is None
+
+        task.cancel()
+        handled_signal_code = signal_code
+
+    for signal_code in signal_codes:
+        loop.add_signal_handler(signal_code, functools.partial(callback, signal_code))
 
     try:
         yield
     except asyncio.CancelledError:
-        if task.cancelling() == 0:
-            raise
+        if handled_signal_code and (task.cancelling() == 1):
+            raise SignalHandledException
+
+        raise
     finally:
-        for signame in sig_names:
-            loop.remove_signal_handler(getattr(signal, signame))
+        for signal_code in signal_codes:
+            loop.remove_signal_handler(signal_code)
 
 
-async def wait_for_signal(sig_names: Collection[str], /):
+async def wait_for_signal(*signal_codes: SignalCode):
     """
     Wait for any of the specified signals to be received.
 
+    No other signal listeners for the same codes may be registered for the
+    current event loop.
+
     Parameters
     ----------
-    sig_names
-        The signal names to wait for e.g. `('SIGINT',)`.
+    signal_codes
+        The signal codes to wait for e.g. `(signal.SIGINT,)`.
     """
 
     loop = asyncio.get_event_loop()
-    future = asyncio.Future()
+    future = Future()
 
     def handler():
         future.set_result(None)
 
-    for signame in sig_names:
-        loop.add_signal_handler(getattr(signal, signame), handler)
+    for signal_code in signal_codes:
+        loop.add_signal_handler(signal_code, handler)
 
     try:
         await future
     finally:
-        for signame in sig_names:
-            loop.remove_signal_handler(getattr(signal, signame))
+        for signal_code in signal_codes:
+            loop.remove_signal_handler(signal_code)

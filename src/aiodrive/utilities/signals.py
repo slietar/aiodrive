@@ -22,15 +22,13 @@ async def handle_signals(*signal_codes: SignalCode) -> AsyncIterator[None]:
     If any of the specified signals is received, the current task is cancelled
     and the signals are no longer listened for.
 
-    If the call is cancelled, the signals stop being listened for.
-
     No other signal listeners for the same codes may be registered for the
     current event loop.
 
     Parameters
     ----------
     signal_codes
-        The signal codes to handle e.g. `(signal.SIGINT,)`.
+        The signal codes to handle e.g. `(signal.Signals.SIGINT,)`.
 
     Raises
     ------
@@ -78,7 +76,7 @@ async def wait_for_signal(*signal_codes: SignalCode):
     Parameters
     ----------
     signal_codes
-        The signal codes to wait for e.g. `(signal.SIGINT,)`.
+        The signal codes to wait for e.g. `(signal.Signals.SIGINT,)`.
     """
 
     loop = asyncio.get_event_loop()

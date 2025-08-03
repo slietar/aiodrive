@@ -108,8 +108,9 @@ async def cleanup_shield[T](awaitable: Awaitable[T], /) -> T:
   current_task = asyncio.current_task()
   assert current_task is not None
 
-  if current_task.cancelled():
-    await awaitable
+  # TODO: Is there a difference with current_task.cancelled()?
+  if current_task.cancelling() > 0:
+    return await awaitable
 
   task = asyncio.ensure_future(awaitable)
 
@@ -121,7 +122,7 @@ async def cleanup_shield[T](awaitable: Awaitable[T], /) -> T:
     # CancelledError for some other reason and is thus finished.
     if not task.done():
       task.cancel()
-      await task
+      return await task
 
     raise
 

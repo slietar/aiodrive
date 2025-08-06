@@ -1,0 +1,79 @@
+import asyncio
+from collections.abc import Awaitable
+import contextlib
+import threading
+from typing import Optional
+from collections.abc import Callable
+
+
+@contextlib.asynccontextmanager
+async def run_in_background(target: Callable[[], Awaitable[None]], /):
+    origin_loop = asyncio.get_event_loop()
+    thread_loop = asyncio.new_event_loop()
+
+    origin_task = asyncio.current_task()
+    assert origin_task is not None
+
+    thread_exception: Optional[Exception] = None
+    thread_task: Optional[asyncio.Task] = None
+    ready_event = threading.Event()
+
+    def thread_main():
+        thread_loop.run_until_complete(thread_main_async())
+
+    async def thread_main_async():
+        nonlocal thread_exception, thread_task
+
+        thread_task = asyncio.current_task()
+        ready_event.set()
+
+        try:
+            await target()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            origin_loop.call_soon_threadsafe(origin_task.cancel)
+            thread_exception = e
+
+    thread = threading.Thread(target=thread_main)
+    thread.start()
+
+    ready_event.wait()
+
+    try:
+        yield
+    finally:
+        assert thread_task is not None
+
+        if thread_loop.is_running():
+            thread_loop.call_soon_threadsafe(thread_task.cancel)
+
+        thread.join()
+
+        if thread_exception is not None:
+            raise thread_exception from None
+
+
+async def main():
+    async def sleep(delay: float):
+        print(f"Sleeping for {delay} seconds")
+
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            print(f"Sleep for {delay} seconds was cancelled")
+            raise
+        else:
+            print(f"Finished sleeping for {delay} seconds")
+
+    try:
+        async with run_in_background(lambda: sleep(1)):
+            await asyncio.sleep(1.5)
+            print("Closing")
+    except Exception as e:
+        raise Exception("An error occurred") from e
+
+    print("Closed")
+
+
+# asyncio.run(main())

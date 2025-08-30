@@ -1,42 +1,10 @@
 import asyncio
 import contextlib
-from asyncio import Future
+from asyncio import Future, Task
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 
 from ..misc import cancel_task
-
-
-# class AsyncContextManagerOrAwaitable[T]:
-#   def __init__(self, func: Callable[[], AsyncGenerator[T]], /):
-#     self._agen: Optional[AsyncGenerator[T]] = None
-#     self._func = func
-
-#   async def __aenter__(self) -> T:
-#     if self._agen is not None:
-#       raise RuntimeError("Context manager already entered")
-
-#     self._agen = self._func()
-
-#     try:
-#       return await anext(self._agen)
-#     except StopAsyncIteration:
-#       raise RuntimeError("Async generator didn't yield") from None
-
-#   async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
-#     if self._agen is None:
-#       raise RuntimeError("Context manager not entered")
-
-#     try:
-#       await anext(self._agen)
-#     except StopAsyncIteration:
-#       pass
-#     else:
-#       raise RuntimeError("Async generator didn't stop")
-
-#   async def __await__(self):
-#     async with self:
-#       await Future()
 
 
 class VersatileContextManager[T]:
@@ -65,11 +33,30 @@ def versatile[**P, R](func: Callable[P, AbstractAsyncContextManager[R]], /):
 
 
 @contextlib.asynccontextmanager
-async def contextualize(coro: Awaitable[None], /):
+async def contextualize(coro: Awaitable[None], /, *, propagate: bool = True):
+  origin_task = asyncio.current_task()
+  assert origin_task is not None
+
+  cancelled = False
   task = asyncio.ensure_future(coro)
+
+  if propagate:
+    def callback(task: Task[None]):
+      nonlocal cancelled
+
+      if task.exception() is not None:
+        origin_task.cancel()
+        cancelled = True
+
+    task.add_done_callback(callback)
+
+  # TODO: Errors still have to be propagated otherwise
 
   try:
     yield
+  except asyncio.CancelledError:
+    if (not cancelled) or (origin_task.cancelling() != 1):
+      raise
   finally:
     await cancel_task(task)
 

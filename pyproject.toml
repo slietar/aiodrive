@@ -1,5 +1,5 @@
 [build-system]
-requires = ["oryn~=1.2"]
+requires = ["oryn~=1.3"]
 build-backend = "oryn"
 
 [project]
@@ -8,10 +8,20 @@ version = "1.0"
 description = "Collection of utilies for working with asynchronous Python code"
 license = "EUPL-1.2"
 readme = "readme.md"
-requires-python = "~=3.12.0"
+requires-python = "~=3.12"
+dependencies = [
+    "ruff>=0.12.5",
+]
 
 [project.urls]
 Repository = "https://github.com/slietar/aiodrive"
 
 [tool.oryn]
 include = ["src/*"]
+
+[tool.ruff]
+include = ["src/**/*.py"]
+
+[tool.ruff.lint]
+select = ["ANN001", "ANN002", "ANN003", "COM812", "COM818", "E", "F", "FURB", "PTH", "RUF", "UP"]
+ignore = ["E501", "E731", "UP045"]

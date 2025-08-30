@@ -1,14 +1,17 @@
 import asyncio
-from collections.abc import Awaitable
-import contextlib
 import threading
+from asyncio import Future
+from collections.abc import Awaitable
 from typing import Optional
-from collections.abc import Callable
+
+from .versatile import contextualize
 
 
-@contextlib.asynccontextmanager
-async def run_in_background(target: Callable[[], Awaitable[None]], /):
-    origin_loop = asyncio.get_event_loop()
+# Is it possible to initialize coroutine in new thread and await it in original thread?
+
+
+async def run_in_thread_loop(target: Awaitable[None], /):
+    origin_loop = asyncio.get_running_loop()
     thread_loop = asyncio.new_event_loop()
 
     origin_task = asyncio.current_task()
@@ -28,7 +31,7 @@ async def run_in_background(target: Callable[[], Awaitable[None]], /):
         ready_event.set()
 
         try:
-            await target()
+            await target
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -41,7 +44,7 @@ async def run_in_background(target: Callable[[], Awaitable[None]], /):
     ready_event.wait()
 
     try:
-        yield
+        await Future()
     finally:
         assert thread_task is not None
 
@@ -67,8 +70,10 @@ async def main():
             print(f"Finished sleeping for {delay} seconds")
 
     try:
-        async with run_in_background(lambda: sleep(1)):
+        async with contextualize(run_in_thread_loop(sleep(1))):
             await asyncio.sleep(1.5)
+            # Or
+            # await asyncio.sleep(.5)
             print("Closing")
     except Exception as e:
         raise Exception("An error occurred") from e
@@ -76,4 +81,5 @@ async def main():
     print("Closed")
 
 
-# asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

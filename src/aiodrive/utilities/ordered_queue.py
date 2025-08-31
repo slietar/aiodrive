@@ -9,9 +9,14 @@ class OrderedQueue[T]:
   _button: Button = field(default_factory=Button, init=False, repr=False)
   _current_index: int = field(default=0, init=False, repr=False)
   _items: dict[int, T] = field(default_factory=dict, init=False, repr=False)
+  _reserved_count: int = field(default=0, init=False, repr=False)
 
-  def empty(self):
-    return not self._items
+  async def __aiter__(self):
+    while True:
+      yield await self.get()
+
+  async def __len__(self):
+    return len(self._items)
 
   async def get(self):
     while True:
@@ -22,17 +27,17 @@ class OrderedQueue[T]:
 
       await self._button
 
-  def put(self, index: int, item: T):
-    if index < self._current_index:
-      raise ValueError(f"Cannot put item at index {index} as it is less than the current index {self._current_index}.")
+  def reserve(self):
+    index = self._reserved_count
+    self._reserved_count += 1
 
-    if index in self._items:
-      raise ValueError(f"Item at index {index} already exists in the queue.")
+    def put(item: T):
+      self._items[index] = item
 
-    self._items[index] = item
+      if index == self._current_index:
+        self._button.press()
 
-    if index == self._current_index:
-      self._button()
+    return put
 
 
 @dataclass(slots=True)
@@ -40,8 +45,12 @@ class UnorderedQueue[T]:
   _button: Button = field(default_factory=Button, init=False, repr=False)
   _items: deque[T] = field(default_factory=deque, init=False, repr=False)
 
-  def empty(self):
-    return not self._items
+  async def __aiter__(self):
+    while True:
+      yield await self.get()
+
+  async def __len__(self):
+    return len(self._items)
 
   async def get(self):
     while not self._items:
@@ -49,6 +58,12 @@ class UnorderedQueue[T]:
 
     return self._items.popleft()
 
-  def put(self, index: int, item: T):
-    self._items.append(item)
-    self._button()
+  def reserve(self):
+    def put(item: T):
+      self._items.append(item)
+      self._button.press()
+
+    return put
+
+
+type QueueType = OrderedQueue | UnorderedQueue

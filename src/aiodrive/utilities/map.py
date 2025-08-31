@@ -3,10 +3,14 @@ import itertools
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Iterable
 from typing import Optional
 
-from .auto_terminated_task_group import auto_terminated_task_group
+from .task_group import use_eager_task_group
 from .button import Button
 from .iterator import ensure_aiter
 from .ordered_queue import OrderedQueue, UnorderedQueue
+
+
+# TODO: Add option to select max queue size
+# TODO: No queue --> let's create another utility for this
 
 
 @contextlib.asynccontextmanager
@@ -64,6 +68,8 @@ async def map_parallel[T, S](
     nonlocal closed, running_count
 
     for index in itertools.count():
+      # TODO: Problem, the same index may be used for multiple items
+
       while (max_concurrent_count is None) or (running_count < max_concurrent_count):
         try:
           item = await anext(iterator)
@@ -76,7 +82,7 @@ async def map_parallel[T, S](
 
       await button
 
-  async with auto_terminated_task_group() as group:
+  async with use_eager_task_group() as group:
     group.create_task(put_queue())
 
     async def create_iter():

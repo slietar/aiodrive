@@ -28,7 +28,7 @@ async def handle_signals(*signal_codes: SignalCode) -> AsyncIterator[None]:
     Parameters
     ----------
     signal_codes
-        The signal codes to handle e.g. `(signal.Signals.SIGINT,)`.
+        The signal codes to handle e.g. `signal.Signals.SIGINT`.
 
     Raises
     ------
@@ -56,9 +56,9 @@ async def handle_signals(*signal_codes: SignalCode) -> AsyncIterator[None]:
 
     try:
         yield
-    except asyncio.CancelledError:
-        if handled_signal_code and (task.cancelling() == 1):
-            raise SignalHandledException
+    except asyncio.CancelledError as e:
+        if (handled_signal_code is not None) and (task.cancelling() == 1):
+            raise SignalHandledException(handled_signal_code) from e
 
         raise
     finally:
@@ -76,7 +76,7 @@ async def wait_for_signal(*signal_codes: SignalCode):
     Parameters
     ----------
     signal_codes
-        The signal codes to wait for e.g. `(signal.Signals.SIGINT,)`.
+        The signal codes to wait for e.g. `signal.Signals.SIGINT.
     """
 
     loop = asyncio.get_event_loop()

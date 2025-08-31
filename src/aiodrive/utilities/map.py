@@ -5,7 +5,7 @@ from typing import Optional
 
 from .task_group import use_eager_task_group
 from .button import Button
-from .iterator import ensure_aiter
+from .aiter import ensure_aiter
 from .ordered_queue import OrderedQueue, UnorderedQueue
 
 

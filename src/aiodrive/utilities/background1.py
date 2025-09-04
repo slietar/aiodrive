@@ -4,6 +4,7 @@ from asyncio import Future
 from collections.abc import Awaitable
 from typing import Optional
 
+from .button1 import ThreadSafeButton
 from .versatile import contextualize
 
 
@@ -18,16 +19,17 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
     thread_result: Optional[T] = None
 
     thread_task: Optional[asyncio.Task] = None
-    ready_event = threading.Event()
+    button = ThreadSafeButton()
 
     def thread_main():
         thread_loop.run_until_complete(thread_main_async())
+        button.press()
 
     async def thread_main_async():
         nonlocal thread_exception, thread_result, thread_task
 
         thread_task = asyncio.current_task()
-        ready_event.set()
+        button.press()
 
         try:
             thread_result = await target
@@ -40,7 +42,7 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
     thread = threading.Thread(target=thread_main)
     thread.start()
 
-    ready_event.wait()
+    await button
 
     try:
         await Future()
@@ -49,8 +51,10 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
 
         if thread_loop.is_running():
             thread_loop.call_soon_threadsafe(thread_task.cancel)
+            # Problem: the loop could have been stopped running
+            # Problem: the button could have been pressed already
+            await button
 
-        # TODO: Actually asynchronously wait for thread_task to finish
         thread.join()
 
         if thread_exception is not None:

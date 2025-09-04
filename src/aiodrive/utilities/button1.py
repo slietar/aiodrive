@@ -6,19 +6,36 @@ from threading import Condition, Lock
 
 @dataclass(slots=True)
 class ThreadSafeButton:
+  """
+  A thread-safe class that wakes up registered waiters when called.
+  """
+
   _condition: Condition = field(default_factory=(lambda: Condition(Lock())), init=False, repr=False)
   _futures: dict[AbstractEventLoop, Future[None]] = field(default_factory=dict, init=False, repr=False)
 
   def press(self):
+    """
+    Wake up all registered waiters.
+    """
+
     with self._condition:
       self._condition.notify_all()
 
       for future in self._futures.values():
-        future.get_loop().call_soon_threadsafe(future.set_result, None)
+        loop = future.get_loop()
+
+        if loop.is_running():
+          loop.call_soon_threadsafe(future.set_result, None)
 
       self._futures.clear()
 
   def wait(self):
+    """
+    Block the current thread until the button is pressed.
+
+    This method may not be called from a running event loop.
+    """
+
     if asyncio.get_running_loop() is not None:
       raise RuntimeError("Cannot call sync wait() from async context")
 
@@ -26,6 +43,10 @@ class ThreadSafeButton:
       self._condition.wait()
 
   def __await__(self):
+    """
+    Wait until the button is pressed.
+    """
+
     with self._condition:
       loop = asyncio.get_running_loop()
 

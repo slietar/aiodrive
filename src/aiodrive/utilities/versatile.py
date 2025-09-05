@@ -32,33 +32,70 @@ def versatile[**P, R](func: Callable[P, AbstractAsyncContextManager[R]], /):
   return inner
 
 
+class DaemonTaskFinishError(Exception):
+  __slots__ = ()
+
 @contextlib.asynccontextmanager
-async def contextualize(coro: Awaitable[None], /, *, propagate: bool = True):
+async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
+  """
+  Transform an awaitable into an async context manager.
+
+  TODO: Details
+
+  Parameters
+  ----------
+  awaitable
+    The awaitable to run in the background.
+  daemon
+    Whether the awaitable should run forever until cancelled.
+
+  Raises
+  ------
+  DaemonTaskFinishError
+    If `daemon` is `True` and the background task finishes successfully before
+    being cancelled.
+  """
+
   origin_task = asyncio.current_task()
   assert origin_task is not None
 
-  cancelled = False
-  task = asyncio.ensure_future(coro)
+  if daemon:
+    async def create_target():
+      await awaitable
+      raise DaemonTaskFinishError
 
-  if propagate:
-    def callback(task: Task[None]):
-      nonlocal cancelled
+    target = create_target()
+  else:
+    target = awaitable
 
-      if task.exception() is not None:
-        origin_task.cancel()
-        cancelled = True
+  background_task = asyncio.ensure_future(target)
 
-    task.add_done_callback(callback)
+  def callback(task: Task[None]):
+    # If the task was not cancelled, it means the origin task is still running.
+    if not task.cancelled() and (task.exception() is not None):
+      origin_task.cancel()
 
-  # TODO: Errors still have to be propagated otherwise
+  background_task.add_done_callback(callback)
 
   try:
     yield
   except asyncio.CancelledError:
-    if (not cancelled) or (origin_task.cancelling() != 1):
-      raise
-  finally:
-    await cancel_task(task)
+    # One of the following is possible:
+    #   - The origin task is being cancelled by the user.
+    #   - The background task raised an exception, which caused the origin task
+    #     to be cancelled.
+
+    await cancel_task(background_task)
+    raise
+  except Exception as e:
+    try:
+      await cancel_task(background_task)
+    except Exception as background_task_exception:
+      raise ExceptionGroup("", [e, background_task_exception]) from None
+
+    raise
+  else:
+    await cancel_task(background_task)
 
 
 

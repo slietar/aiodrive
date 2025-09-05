@@ -1,4 +1,8 @@
 from asyncio import Future
+from collections.abc import Awaitable
+import contextlib
+from typing import cast
+import asyncio
 from dataclasses import dataclass
 from typing import Literal, Optional
 
@@ -6,10 +10,22 @@ from typing import Literal, Optional
 @dataclass(kw_only=True, slots=True)
 class FutureState[T]:
     exception: Optional[BaseException] = None
-    result: Optional[T] = None
+    result: T = cast(T, None)  # noqa: RUF009
     status: Literal["cancelled", "exception", "pending", "success"]
 
-    def digest(self, future: Future[T], /):
+    def apply(self):
+        match self.status:
+            case "cancelled":
+                raise asyncio.CancelledError from None
+            case "exception":
+                assert self.exception is not None
+                raise self.exception from None
+            case "pending":
+                raise RuntimeError("Future is still pending")
+            case "success":
+                return self.result
+
+    def transfer(self, future: Future[T], /):
         assert not future.done()
 
         match self.status:
@@ -21,7 +37,7 @@ class FutureState[T]:
             case "pending":
                 pass
             case "success":
-                assert self.result is not None
+                future.set_result(self.result)
 
     @classmethod
     def new_cancelled(cls):
@@ -39,8 +55,23 @@ class FutureState[T]:
     def new_success(cls, result: T):
         return cls(result=result, status="success")
 
+    @contextlib.contextmanager
+    def absorb_context(cls, /, result: T = None):
+        state = cls.new_pending()
+
+        try:
+            yield state
+        except asyncio.CancelledError:
+            state.status = "cancelled"
+        except Exception as e:
+            state.status = "exception"
+            state.exception = e
+        else:
+            state.status = "success"
+            state.result = result
+
     @classmethod
-    def absorb(cls, future: Future[T], /):
+    def absorb_future(cls, future: Future[T], /):
         if not future.done():
             return cls.new_pending()
 
@@ -51,3 +82,14 @@ class FutureState[T]:
             return cls.new_failed(exception)
 
         return cls.new_success(future.result())
+
+    @classmethod
+    async def absorb_awaitable(cls, awaitable: Awaitable[T], /):
+        try:
+            result = await awaitable
+        except asyncio.CancelledError:
+            return cls.new_cancelled()
+        except Exception as e:
+            return cls.new_failed(e)
+        else:
+            return cls.new_success(result)

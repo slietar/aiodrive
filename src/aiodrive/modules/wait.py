@@ -1,8 +1,7 @@
 import asyncio
 from asyncio import Task
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable, Iterable, Sequence
 from typing import Optional
-from collections.abc import Iterable
 
 
 async def try_all[T](items: Iterable[Awaitable[T]], /) -> Sequence[T]:
@@ -10,9 +9,8 @@ async def try_all[T](items: Iterable[Awaitable[T]], /) -> Sequence[T]:
   Wait for all provided coroutines or tasks to complete, cancelling other tasks
   if one of them raises an exception.
 
-  All coroutines passed as argument are converted to tasks. If an exception is
-  raised by one of the tasks, the other tasks are cancelled and awaited. The
-  remaining behavior is similar to that of `wait_all()`.
+  If an exception is raised by one of the tasks, the other tasks are cancelled
+  and awaited. The remaining behavior is similar to that of `wait_all()`.
 
   Parameters
   ----------
@@ -46,11 +44,10 @@ async def wait_all[T](items: Iterable[Awaitable[T]], /) -> Sequence[T]:
   """
   Wait for all provided coroutines or tasks to complete.
 
-  All coroutines passed as argument are converted to tasks. If an exception is
-  raised by one of the tasks, the other tasks are still awaited without being
-  cancelled, until all tasks finish. If a single exception is raised while
-  awaiting tasks, it is re-raised. If more than one exception is raised, a
-  `BaseExceptionGroup` is raised with the caught exceptions.
+  If an exception is raised by one of the tasks, the other tasks are still
+  awaited without being cancelled, until all tasks finish. If a single exception
+  is raised while awaiting tasks, it is re-raised. If more than one exception is
+  raised, a `BaseExceptionGroup` is raised with the caught exceptions.
 
   If the call to this function is cancelled, all unfinished tasks are cancelled
   and awaited. The `asyncio.CancelledError` exception is re-raised if no other

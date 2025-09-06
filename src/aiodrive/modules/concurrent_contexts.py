@@ -3,34 +3,32 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import AbstractAsyncContextManager
 from typing import overload
 
-from ..misc import cleanup_shield
-from ..wait import try_all, wait_all
+from .shield import cleanup_shield
+from .wait import try_all, wait_all
 
-
-# Possible other names: enter_independent_contexts(), use_contexts_concurrently()
 
 @overload
-def enter_contexts_concurrently(managers: tuple[()], /) -> AbstractAsyncContextManager[tuple[()]]:
+def concurrent_contexts(managers: tuple[()], /) -> AbstractAsyncContextManager[tuple[()]]:
     ...
 
 @overload
-def enter_contexts_concurrently[T1](managers: tuple[AbstractAsyncContextManager[T1]], /) -> AbstractAsyncContextManager[tuple[T1]]:
+def concurrent_contexts[T1](managers: tuple[AbstractAsyncContextManager[T1]], /) -> AbstractAsyncContextManager[tuple[T1]]:
     ...
 
 @overload
-def enter_contexts_concurrently[T1, T2](managers: tuple[AbstractAsyncContextManager[T1], AbstractAsyncContextManager[T2]], /) -> AbstractAsyncContextManager[tuple[T1, T2]]:
+def concurrent_contexts[T1, T2](managers: tuple[AbstractAsyncContextManager[T1], AbstractAsyncContextManager[T2]], /) -> AbstractAsyncContextManager[tuple[T1, T2]]:
     ...
 
 @overload
-def enter_contexts_concurrently[T1, T2, T3](managers: tuple[AbstractAsyncContextManager[T1], AbstractAsyncContextManager[T2], AbstractAsyncContextManager[T3]], /) -> AbstractAsyncContextManager[tuple[T1, T2, T3]]:
+def concurrent_contexts[T1, T2, T3](managers: tuple[AbstractAsyncContextManager[T1], AbstractAsyncContextManager[T2], AbstractAsyncContextManager[T3]], /) -> AbstractAsyncContextManager[tuple[T1, T2, T3]]:
     ...
 
 @overload
-def enter_contexts_concurrently[T](managers: Iterable[AbstractAsyncContextManager[T]], /) -> AbstractAsyncContextManager[tuple[T, ...]]:
+def concurrent_contexts[T](managers: Iterable[AbstractAsyncContextManager[T]], /) -> AbstractAsyncContextManager[tuple[T, ...]]:
     ...
 
 @contextlib.asynccontextmanager
-async def enter_contexts_concurrently(managers: Iterable[AbstractAsyncContextManager], /) -> AsyncIterator[tuple]:
+async def concurrent_contexts(managers: Iterable[AbstractAsyncContextManager], /) -> AsyncIterator[tuple]:
     """
     Enter multiple asynchronous context managers concurrently.
 
@@ -65,3 +63,8 @@ async def enter_contexts_concurrently(managers: Iterable[AbstractAsyncContextMan
         yield tuple(await try_all(enter_context(manager) for manager in managers))
     finally:
         await cleanup_shield(wait_all(manager.__aexit__(None, None, None) for manager in open_managers))
+
+
+__all__ = [
+    'concurrent_contexts',
+]

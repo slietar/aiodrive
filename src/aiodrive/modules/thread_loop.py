@@ -3,7 +3,7 @@ import threading
 from collections.abc import Awaitable
 from typing import Literal, Optional
 
-from ..misc import shield
+from .shield import shield
 from .thread_safe_button import ThreadSafeButton
 
 

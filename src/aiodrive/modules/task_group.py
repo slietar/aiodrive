@@ -18,3 +18,8 @@ async def use_eager_task_group() -> AsyncIterator[TaskGroup]:
       raise TaskGroupTerminatedException
   except* TaskGroupTerminatedException:
     pass
+
+
+__all__ = [
+  'use_eager_task_group',
+]

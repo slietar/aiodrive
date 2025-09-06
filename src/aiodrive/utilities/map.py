@@ -1,29 +1,23 @@
-import contextlib
-import itertools
-from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Iterable
+from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
 from typing import Optional
 
-from .task_group import use_eager_task_group
-from .button import Button
-from .aiter import ensure_aiter
+from ..modules.task_group import use_eager_task_group
+from ..modules.aiter import ensure_aiter
 from .ordered_queue import OrderedQueue, UnorderedQueue
 
 
-# TODO: Add option to select max queue size
-# TODO: No queue --> let's create another utility for this
-
-
-@contextlib.asynccontextmanager
 async def map_parallel[T, S](
   mapper: Callable[[T], Awaitable[S]],
   iterable: AsyncIterable[T] | Iterable[T],
   /, *,
   max_concurrent_count: Optional[int] = None,
   ordered: bool,
-) -> AsyncIterator[AsyncIterable[S]]:
+):
   """
   Map an `Iterable` or `AsyncIterable` to another `AsyncIterable` using the
   provided asynchronous mapper function.
+
+  The current task is cancelled if the iterable raises an exception.
 
   Parameters
   ----------
@@ -38,55 +32,45 @@ async def map_parallel[T, S](
   ordered
     Whether to maintain the order of items in the output. If false, items may be
     yielded more quickly if some later items are processed faster than earlier
-    ones.
+    ones. However, items are still yielded in the order in which they are
+    returned by the mapper.
 
   Returns
   -------
-  AbstractAsyncContextManager[AsyncIterable[S]]
-    An asynchronous context manager that provides an `AsyncIterable` of the
-    mapped items. The context manager may only be used once and is necessary in
-    order to clean up any pending item processing.
+  Generator[S]
+    An asynchronous generator yielding the mapped items. It is crucial to close
+    the generator for internal tasks to be cleaned up.
   """
 
-  button = Button()
   queue = OrderedQueue[S]() if ordered else UnorderedQueue[S]()
 
-  closed = False
-  running_count = 0
   iterator = ensure_aiter(iterable)
+  job_count = 0
 
-  async def run(index: int, item: T):
-    nonlocal running_count
+  async def job():
+    nonlocal job_count
 
     try:
-      queue.put(index, await mapper(item))
+      item = await anext(iterator)
+    except StopAsyncIteration:
+      queue.close()
+    else:
+      if (max_concurrent_count is None) or (job_count < max_concurrent_count):
+        group.create_task(job())
+        job_count += 1
+
+      put_item = queue.reserve()
+      put_item(await mapper(item))
     finally:
-      button()
-      running_count -= 1
-
-  async def put_queue():
-    nonlocal closed, running_count
-
-    for index in itertools.count():
-      # TODO: Problem, the same index may be used for multiple items
-
-      while (max_concurrent_count is None) or (running_count < max_concurrent_count):
-        try:
-          item = await anext(iterator)
-        except StopAsyncIteration:
-          closed = True
-          return
-        else:
-          group.create_task(run(index, item))
-          running_count += 1
-
-      await button
+      job_count -= 1
 
   async with use_eager_task_group() as group:
-    group.create_task(put_queue())
+    group.create_task(job())
+    job_count += 1
 
-    async def create_iter():
-      while (not closed) or (running_count > 0) or not queue.empty():
-        yield await queue.get()
+    async for mapped_item in queue:
+      yield mapped_item
 
-    yield create_iter()
+
+
+# exhausted

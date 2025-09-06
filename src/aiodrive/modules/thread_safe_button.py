@@ -49,11 +49,15 @@ class ThreadSafeButton:
 
     with self._condition:
       loop = asyncio.get_running_loop()
-
       future = self._futures.get(loop)
 
       if future is None:
-        future = Future()
+        future = Future[None]()
         self._futures[loop] = future
 
       return asyncio.shield(future).__await__()
+
+
+__all__ = [
+  'ThreadSafeButton',
+]

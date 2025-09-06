@@ -3,11 +3,25 @@ import threading
 from collections.abc import Awaitable
 from typing import Literal, Optional
 
-from .button1 import ThreadSafeButton
+from ..misc import shield
+from .thread_safe_button import ThreadSafeButton
 
 
 async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
-    origin_loop = asyncio.get_running_loop()
+    """
+    Run an awaitable in a separate thread with its own event loop.
+
+    Parameters
+    ----------
+    target
+        The awaitable to run in a separate thread.
+
+    Returns
+    -------
+    T
+        The result of the awaitable.
+    """
+
     thread_loop = asyncio.new_event_loop()
 
     origin_task = asyncio.current_task()
@@ -39,7 +53,7 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
     thread = threading.Thread(target=thread_main)
     thread.start()
 
-    await stage_change
+    await shield(stage_change)
     assert stage == "running"
 
     try:
@@ -62,20 +76,6 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
         await thread_task
 
 
-async def main():
-    async def sleep(delay: float):
-        print(f"Sleeping for {delay} seconds")
-
-        try:
-            await asyncio.sleep(delay)
-        except asyncio.CancelledError:
-            print(f"Sleep for {delay} seconds was cancelled")
-            raise
-        else:
-            print(f"Finished sleeping for {delay} seconds")
-
-    await run_in_thread_loop(sleep(2))
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+__all__ = [
+    'run_in_thread_loop',
+]

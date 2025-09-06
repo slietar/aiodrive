@@ -1,40 +1,15 @@
 import asyncio
 import contextlib
-from asyncio import Future, Task
-from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
+from asyncio import Task
+from collections.abc import Awaitable
 
 from ..misc import cancel_task
 from .scope import use_scope
 
 
-class VersatileContextManager[T]:
-  def __init__(self, manager: AbstractAsyncContextManager[T], /):
-    self._manager = manager
-
-  async def __aenter__(self):
-    return await self._manager.__aenter__()
-
-  async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
-    return await self._manager.__aexit__(exc_type, exc_value, traceback)
-
-  def __await__(self):
-    async def inner():
-      async with self._manager:
-        await Future()
-
-    return inner().__await__()
-
-
-def versatile[**P, R](func: Callable[P, AbstractAsyncContextManager[R]], /):
-  def inner(*args: P.args, **kwargs: P.kwargs):
-    return VersatileContextManager(func(*args, **kwargs))
-
-  return inner
-
-
 class DaemonTaskFinishError(Exception):
   __slots__ = ()
+
 
 @contextlib.asynccontextmanager
 async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
@@ -105,30 +80,7 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
     await cancel_task(background_task)
 
 
-async def main():
-  async def sleep():
-    raise Exception("Awake")
-
-    try:
-      await asyncio.sleep(.5)
-    finally:
-      print("Cleanup")
-      try:
-        await asyncio.sleep(1)
-      finally:
-        print("Cleaned up")
-        raise Exception("Awake")
-
-    print("Done")
-
-  async with contextualize(sleep()):
-    try:
-      # await asyncio.sleep(0.01)
-      pass
-    finally:
-      raise Exception("Exit context")
-
-  print("Closing event loop")
-
-if __name__ == "__main__":
-  asyncio.run(main())
+__all__ = [
+  'DaemonTaskFinishError',
+  'contextualize',
+]

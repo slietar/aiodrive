@@ -1,10 +1,9 @@
+import asyncio
+import contextlib
 from asyncio import Future
 from collections.abc import Awaitable
-import contextlib
-from typing import cast
-import asyncio
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 
 
 @dataclass(kw_only=True, slots=True)
@@ -44,7 +43,7 @@ class FutureState[T]:
         return cls(status="cancelled")
 
     @classmethod
-    def new_failed(cls, exception: BaseException):
+    def new_failed(cls, exception: BaseException, /):
         return cls(exception=exception, status="exception")
 
     @classmethod
@@ -52,7 +51,7 @@ class FutureState[T]:
         return cls(status="pending")
 
     @classmethod
-    def new_success(cls, result: T):
+    def new_success(cls, result: T, /):
         return cls(result=result, status="success")
 
     @contextlib.contextmanager
@@ -89,7 +88,12 @@ class FutureState[T]:
             result = await awaitable
         except asyncio.CancelledError:
             return cls.new_cancelled()
-        except Exception as e:
+        except BaseException as e:
             return cls.new_failed(e)
         else:
             return cls.new_success(result)
+
+
+__all__ = [
+    'FutureState',
+]

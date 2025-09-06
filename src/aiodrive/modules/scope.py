@@ -10,11 +10,22 @@ class Scope:
   task: Task = field(repr=False)
 
   def cancel(self):
+    """
+    Cancel the current task.
+
+    The current task will be uncancelled once the scope is exited.
+    """
+
     self.task.cancel()
+    self.cancellation_count += 1
 
 
 @contextlib.asynccontextmanager
 async def use_scope():
+  """
+  Create a context that locally manages the cancellation of the current task.
+  """
+
   task = asyncio.current_task()
   assert task is not None
 
@@ -26,6 +37,11 @@ async def use_scope():
     for _ in range(scope.cancellation_count):
       task.uncancel()
 
-    # TODO: Maybe using task.cancelled() is ok
     if task.cancelling() != 0:
       raise
+
+
+__all__ = [
+  'Scope',
+  'use_scope',
+]

@@ -3,7 +3,7 @@ import contextlib
 import functools
 import signal
 from asyncio import Future
-from collections.abc import AsyncIterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from signal import Signals as SignalCode
 from typing import Optional
@@ -14,8 +14,8 @@ class SignalHandledException(Exception):
     signal: signal.Signals
 
 
-@contextlib.asynccontextmanager
-async def handle_signals(*signal_codes: SignalCode) -> AsyncIterator[None]:
+@contextlib.contextmanager
+def handle_signals(*signal_codes: SignalCode) -> Iterator[None]:
     """
     Handle specified signals by cancelling the current task.
 
@@ -76,7 +76,7 @@ async def wait_for_signal(*signal_codes: SignalCode):
     Parameters
     ----------
     signal_codes
-        The signal codes to wait for e.g. `signal.Signals.SIGINT.
+        The signal codes to wait for e.g. `signal.Signals.SIGINT`.
     """
 
     loop = asyncio.get_event_loop()
@@ -93,3 +93,10 @@ async def wait_for_signal(*signal_codes: SignalCode):
     finally:
         for signal_code in signal_codes:
             loop.remove_signal_handler(signal_code)
+
+
+__all__ = [
+    'SignalHandledException',
+    'handle_signals',
+    'wait_for_signal',
+]

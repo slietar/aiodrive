@@ -8,7 +8,7 @@ class Latch:
   """
   A class that can be set or unset, and can be waited on state changes.
 
-  This is similar to an asyncio Event, but allows waiting for both set and unset
+  This is similar to `asyncio.Event` but allows waiting for both set and unset
   states.
   """
 
@@ -41,3 +41,8 @@ class Latch:
   async def wait_unset(self):
     if self._set:
       await asyncio.shield(self._future)
+
+
+__all__ = [
+  'Latch',
+]

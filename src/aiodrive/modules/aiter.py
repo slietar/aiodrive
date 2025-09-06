@@ -2,17 +2,16 @@ from collections import deque
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from typing import Optional
 
+from .contextualize import contextualize
 from .latch import Latch
-from .versatile import contextualize
 
 
 async def buffer_aiter[T](iterable: AsyncIterable[T], /, *, size: Optional[int]):
   """
   Create an async generator that prefetches items from the given async iterable.
 
-  Items are prefetched sequentially from the iterable. It is crucial for the
-  returned generator to be closed in order for any remaining the prefetching
-  task to be cancelled.
+  Items are prefetched sequentially from the iterable. The current task is
+  cancelled if the iterable raises an exception.
 
   Parameters
   ----------
@@ -21,10 +20,11 @@ async def buffer_aiter[T](iterable: AsyncIterable[T], /, *, size: Optional[int])
   size
     The maximum number of items to prefetch. If `None`, there is no limit.
 
-  Yields
+  Returns
   ------
-  T
-    Items from the given async iterable.
+  Generator[T]
+    An asynchronous generator yielding the prefetched items. It is crucial to
+    close the generator for internal tasks to be cleaned up.
   """
 
   iterator = aiter(iterable)
@@ -72,3 +72,9 @@ def ensure_aiter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterato
         yield item
 
     return create_aiter()
+
+
+__all__ = [
+  'buffer_aiter',
+  'ensure_aiter',
+]

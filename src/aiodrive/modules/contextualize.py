@@ -3,7 +3,7 @@ import contextlib
 from asyncio import Task
 from collections.abc import Awaitable
 
-from ..misc import cancel_task
+from .cancel import cancel_task
 from .scope import use_scope
 
 

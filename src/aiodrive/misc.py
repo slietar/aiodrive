@@ -3,26 +3,33 @@ import contextlib
 from asyncio import Task
 from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass, field
+import inspect
+import types
 from typing import Any
 
 
-async def cancel_task(task: Task[Any], /):
+async def cancel_task(task: Task[object], /):
   """
-  Silently cancel and then await the provided task, if it is not done already.
-
-  If not done, the task is cancelled and then awaited. The `asyncio.CancelledError` instance raised by the task is ignored. If the task raises an exception other than `asyncio.CancelledError`, it is re-raised, but only if the task was not done (~~~). TODO: Improve
+  Cancel and await the provided task.
 
   Parameters
-    task: The task to cancel, or `None`.
+  ----------
+  task
+    The task to cancel.
   """
 
-  if not task.done():
+  if task.done():
+    await task
+  else:
     task.cancel()
 
     try:
       await task
     except asyncio.CancelledError:
       task.uncancel()
+
+      if task.cancelling() > 1:
+        raise
 
 
 @dataclass(slots=True)
@@ -50,9 +57,14 @@ class Primed[T]:
       else:
         yield hint
 
+# TODO: Accept awaitable instead of coroutine?
 def prime[T](coro: Coroutine[Any, Any, T], /) -> Coroutine[Any, Any, T]:
   """
-  Prime a coroutine such that as much as possible is executed immediately rather than when the coroutine is awaited.
+  Prime a coroutine such that as much code as possible is executed immediately
+  rather than when the coroutine is awaited.
+
+  It is safe to run this function on a different event loop or thread than the
+  one where the returned coroutine is awaited.
 
   Returns
     A coroutine that can be awaited to execute the input coroutine.
@@ -63,10 +75,10 @@ def prime[T](coro: Coroutine[Any, Any, T], /) -> Coroutine[Any, Any, T]:
 
   hint = coro.send(None)
 
-  async def a():
+  async def inner():
     return await Primed(coro, hint)
 
-  return a()
+  return inner()
 
 
 async def shield[T](awaitable: Awaitable[T], /) -> T:
@@ -174,3 +186,59 @@ __all__ = [
   'shield',
   'timeout',
 ]
+
+
+def prime1[T](coro: Coroutine[Any, Any, T], /):
+  try:
+    hint = coro.send(None)
+  except StopIteration as e:
+    hint = e.value
+    returned = True
+  else:
+    returned = False
+
+  @types.coroutine
+  def inner():
+    if returned:
+      return hint
+
+    yield hint
+    result = yield from coro
+    return result
+
+  return inner()
+
+
+if __name__ == '__main__':
+  async def a(c):
+    pass
+
+  async def b():
+    return 2
+    try:
+      print("A")
+      await asyncio.sleep(1)
+      print("B")
+      await asyncio.sleep(1)
+      print("C")
+      return 42
+    finally:
+      print("Close")
+
+  async def main():
+    # p = asyncio.sleep(1)
+    # t = asyncio.create_task(prime(a(p)))
+    # t.cancel()
+
+    coro = prime(b())
+    task = asyncio.ensure_future(coro)
+    # await asyncio.sleep(1.5)
+    task.cancel()
+
+    await asyncio.sleep(10)
+
+    # print("Start")
+    # value = await coro
+    # print(value)
+
+  asyncio.run(main())

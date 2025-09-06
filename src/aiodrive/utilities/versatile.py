@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 
 from ..misc import cancel_task
+from .scope import use_scope
 
 
 class VersatileContextManager[T]:
@@ -40,7 +41,11 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   """
   Transform an awaitable into an async context manager.
 
-  TODO: Details
+  When the context is exited, the background task created from the awaitable is
+  cancelled and awaited, if still running. If the background task raises an
+  exception, the current task is cancelled until exiting the context. If both
+  the current and background tasks raise an exception, the exceptions are
+  aggregated into an `ExceptionGroup`.
 
   Parameters
   ----------
@@ -56,9 +61,6 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
     being cancelled.
   """
 
-  origin_task = asyncio.current_task()
-  assert origin_task is not None
-
   if daemon:
     async def create_target():
       await awaitable
@@ -71,15 +73,17 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   background_task = asyncio.ensure_future(target)
 
   def callback(task: Task[None]):
-    # If the task was not cancelled, it means the origin task is still running.
     if not task.cancelled() and (task.exception() is not None):
-      origin_task.cancel()
+      scope.cancel()
 
   background_task.add_done_callback(callback)
 
   try:
-    yield
+    async with use_scope() as scope:
+      yield
   except asyncio.CancelledError:
+    background_task.remove_done_callback(callback)
+
     # One of the following is possible:
     #   - The origin task is being cancelled by the user.
     #   - The background task raised an exception, which caused the origin task
@@ -88,6 +92,8 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
     await cancel_task(background_task)
     raise
   except Exception as e:
+    background_task.remove_done_callback(callback)
+
     try:
       await cancel_task(background_task)
     except Exception as background_task_exception:
@@ -95,29 +101,34 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
 
     raise
   else:
+    background_task.remove_done_callback(callback)
     await cancel_task(background_task)
 
 
-
 async def main():
-  @versatile
-  @contextlib.asynccontextmanager
   async def sleep():
-    print("Start")
-    await asyncio.sleep(.5)
+    raise Exception("Awake")
 
     try:
-      yield
+      await asyncio.sleep(.5)
     finally:
       print("Cleanup")
-      await asyncio.sleep(.5)
+      try:
+        await asyncio.sleep(1)
+      finally:
+        print("Cleaned up")
+        raise Exception("Awake")
 
     print("Done")
 
-  async with sleep():
-    print("In context manager")
-    # await asyncio.sleep(1)
-    raise RuntimeError("Test")
+  async with contextualize(sleep()):
+    try:
+      # await asyncio.sleep(0.01)
+      pass
+    finally:
+      raise Exception("Exit context")
+
+  print("Closing event loop")
 
 if __name__ == "__main__":
   asyncio.run(main())

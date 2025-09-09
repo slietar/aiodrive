@@ -6,6 +6,7 @@ from .modules.cancel import *
 from .modules.concurrent_contexts import *
 from .modules.contextualize import *
 from .modules.future_state import *
+from .modules.guaranteed_task import *
 from .modules.latch import *
 from .modules.nestable_lock import *
 from .modules.prime import *

@@ -4,6 +4,7 @@ from asyncio import Task
 from collections.abc import Awaitable
 
 from .cancel import cancel_task
+from .guaranteed_task import GuaranteedTask
 from .scope import use_scope
 
 
@@ -45,7 +46,7 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   else:
     target = awaitable
 
-  background_task = asyncio.ensure_future(target)
+  background_task = GuaranteedTask(target)
 
   def callback(task: Task[None]):
     if not task.cancelled() and (task.exception() is not None):

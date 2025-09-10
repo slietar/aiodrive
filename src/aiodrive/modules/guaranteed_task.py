@@ -16,6 +16,12 @@ class GuaranteedTask[T]:
     self._ready = False
     self._task = asyncio.create_task(task_main())
 
+  def add_done_callback(self, fn):
+    self._task.add_done_callback(fn)
+
+  def remove_done_callback(self, fn):
+    self._task.remove_done_callback(fn)
+
   def cancel(self):
     self._cancellation_count += 1
 

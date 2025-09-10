@@ -4,8 +4,9 @@ from collections.abc import Awaitable
 from typing import Literal, Optional
 
 from .shield import shield
-from .thread_safe_button import ThreadSafeButton
+from .thread_safe_state import ThreadsafeState
 
+# TODO: Start thread immediately
 
 async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
     """
@@ -29,53 +30,70 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
 
     thread_task: Optional[asyncio.Task[object]] = None
 
-    stage: Literal["join", "preparing", "running", "terminating"] = "preparing"
-    stage_change = ThreadSafeButton()
+    stage = ThreadsafeState[Literal["join", "preparing", "running"]]("preparing")
 
     def thread_main():
         nonlocal stage
 
         thread_loop.run_until_complete(thread_main_async())
 
-        stage = "join"
-        stage_change.press()
+        stage.set_value("join")
 
     async def thread_main_async():
         nonlocal stage, thread_task
 
         thread_task = asyncio.ensure_future(target)
 
-        stage = "running"
-        stage_change.press()
+        stage.set_value("running")
 
         await asyncio.wait([thread_task])
 
     thread = threading.Thread(target=thread_main)
     thread.start()
 
-    await shield(stage_change)
-    assert stage == "running"
+    # await stage.wait_until(lambda value: value != "preparing")
 
     try:
-        await stage_change
+        await stage.wait_until(lambda value: value == "join")
     finally:
-        if stage == "running":
+        assert thread_task is not None
+
+        if stage.value == "running":
             try:
                 thread_loop.call_soon_threadsafe(thread_task.cancel)
             except RuntimeError:
                 # Handle a very unlikely race condition where the thread has just exited
                 pass
 
-            await stage_change
+            await stage.wait_until(lambda value: value == "join")
 
-        assert stage == "join"
         thread.join()
 
         # This should be safe given that the thread has exited
         # It allows the exception to have a proper traceback
-        await thread_task
+        return await thread_task
 
 
 __all__ = [
     'run_in_thread_loop',
 ]
+
+
+async def a():
+    print("Start a")
+    try:
+        await asyncio.sleep(1)
+    finally:
+        raise Exception("Test")
+
+    print("End a")
+    return 42
+
+async def main():
+    x = await run_in_thread_loop(a())
+    print(f"Result: {x}")
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())

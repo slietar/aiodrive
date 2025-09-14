@@ -4,8 +4,6 @@
 
 It only supports Python 3.12 and later.
 
-TODO: ThreadSafeFuture as new synchronization primitive
-
 
 ## Installation
 
@@ -16,10 +14,8 @@ $ pip install aiodrive
 
 ## Features
 
-- **`AutoTerminatedTaskGroup`** – A task group that automatically terminates
 - **`BackgroundExecutor`** – A class that runs tasks in a separate thread, each
   with a dedicated lifetime.
-  when the current task is cancelled.
 - **`Button`** – A synchronization primitive similar to `asyncio.Event` but that
   resets immediately after being set, useful for triggering waiters.
 - **`Latch`** – A synchronization primitive similar to `asyncio.Event` but that
@@ -34,9 +30,19 @@ $ pip install aiodrive
 - **`UnorderedQueue`** – A queue similar to `asyncio.Queue` but with the same
   interface as `OrderedQueue`.
 
+- **`auto_terminated_task_group`** – A task group that automatically terminates
+  when the current task is cancelled.
+- **`buffer_aiter()`** – Buffer items of an async iterable into a list. (TODO:
+  Maybe even concurrently on non-generator iterators?, see
+  https://stackoverflow.com/questions/43701647/semantics-of-async-for-can-anext-calls-overlap)
 - **`cancel_task()`** – Cancel a task and await it.
+- **`collect()`**
+- **`contextualize()`** – Run an awaitable as a context manager, ensuring that
+  its task is cancelled when the context manager exits.
 - **`handle_signal()`** – Register a signal handler that cancels the current
   task when the signal is received.
+- **`map_concurrently()`** – Map items of an async iterable concurrently into a
+  new async iterable.
 - **`prime()`** – Immediately execute as much code of a coroutine as possible
   before it is awaited.
 - **`race()`** – Run multiple tasks and return the result of the first one to
@@ -45,74 +51,43 @@ $ pip install aiodrive
   taking into account the time taken when the yielded value is consumed.
 - **`shield()`** – Shield a task against cancellation and await it, unlike
   `asyncio.shield()`.
-- **`timeout()`** – Run a block of code with a timeout, unlike
+- **`run_in_thread()`** – Run an awaitable in a separate thread with its
+  own event loop.
+- **`timeout()`** (TODO: Deprecate) – Run a block of code with a timeout, unlike
   `asyncio.wait_for()` which only supports a single awaitable.
 - **`try_all()`** – Run multiple tasks and cancel those still running if one of
   them raises an exception.
 - **`wait_all()`** – Run multiple tasks without cancelling any if one raises an
   exception.
 - **`wait_for_signal()`** – Wait for a signal.
+<!-- - **`wrap_anext()**` - Wrap every iteration of an async iterator with an
+  abstract context manager.
+  Not sure about that one - this is could also exist for sync iterators on sync context managers, and yet this use case never came up.
+  -->
+- **`zip_concurrently()`** – Zip multiple async iterables concurrently into a
+  new async iterable.
+
+
+## Examples
+
+
+### Running a spinner on a separate thread
+
+```py
+async def spinner(interval: float):
+  async for (_, index) in zip_concurrently(
+    repeat_periodically(interval),
+    ensure_aiter(itertools.count()),
+  ):
+    print("Loading... " + ["|", "/", "-", "\\"][index % 4])
+
+async with contextualize(run_in_thread(spinner(interval=0.1))):
+  # Do blocking work here
+  ...
+```
 
 
 ## Usage
-
-### Pools
-
-A _pool_ is a collection of tasks that run at the same time. If any task fails, all other tasks are cancelled and all exceptions are re-raised, in an `ExceptionGroup` if necessary. If the parent task is cancelled, all tasks in the pool are cancelled as well.
-
-The easiest way to create a pool is to use the `Pool.open()` asynchronous context manager.
-
-```py
-from aiodrive import Pool
-
-async def job1():
-  ...
-
-async def job2():
-  ...
-
-async with Pool.open() as pool:
-  pool.spawn(job1())
-  pool.spawn(job2())
-```
-
-An alternative is to use the `Pool()` constructor and the `Pool.run()` method.
-
-```py
-pool = Pool()
-
-pool.spawn(job1())
-pool.spawn(job2())
-
-await pool.run()
-
-# Or if there is no event loop running
-
-asyncio.run(pool.run())
-```
-
-### Utility functions
-
-
-### BackgroundExecutor
-
-```py
-from aiodrive import BackgroundExecutor
-
-# Ran on another thread
-async def log_periodically():
-  while True:
-    print("Logging...")
-    await asyncio.sleep(1)
-
-async with BackgroundExecutor() as executor:
-  async with executor.spawn(log_periodically()):
-    # Block the main thread
-    time.sleep(5)
-
-# The thread is closed when the context manager exits, or if it was never entered, when the last task completes.
-```
-
 
 ### SmartLock
 
@@ -122,7 +97,16 @@ Thread-safe
 ```py
 from aiodrive import SmartLock
 
+# priority_resolution = fifo, random, max_acquired_count+fifo
 lock = SmartLock()
+
+# mode = exclusive, shared
+# scope = none, task (not useful), thread, context (not a subset nor superset of task and thread)
+# weak = True/False
+async with lock.acquire(mode="exclusive", scope="thread"):
+  pass
+
+# Alternative
 
 async with lock.exclusive():
   ...
@@ -134,6 +118,7 @@ async with lock.thread_shared():
   ...
 
 # The current task may be cancelled if another task asks for the lock
+# Only acquired once only weak tasks are waiting (or no tasks at all)
 async with lock.weak_exclusive():
   ...
 
@@ -142,5 +127,5 @@ async with lock.weak_exclusive():
 with lock.exclusive()
 with lock.shared()
 with lock.thread_shared()
-with lock.weak_exclusive()
+# with lock.weak_exclusive() - Does not exist
 ```

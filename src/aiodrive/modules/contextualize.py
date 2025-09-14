@@ -28,7 +28,7 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   awaitable
     The awaitable to run in the background.
   daemon
-    Whether the awaitable should run forever until cancelled.
+    Whether the awaitable is expected to run forever until cancelled.
 
   Raises
   ------
@@ -48,7 +48,7 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
 
   background_task = GuaranteedTask(target)
 
-  def callback(task: Task[None]):
+  def callback(task: GuaranteedTask[None]):
     if not task.cancelled() and (task.exception() is not None):
       scope.cancel()
 

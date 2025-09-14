@@ -1,8 +1,8 @@
 # Aiodrive
 
-**Aiodrive** is a Python package for working with asynchronous code powered by `asyncio`. It provides various utilities for producing and consuming iterators, managing tasks, and coordinating between threads and asynchronous code.
+Aiodrive is a Python package for working with asynchronous code powered by `asyncio`. It provides various utilities for producing and consuming iterators, managing tasks, and coordinating between threads and asynchronous code.
 
-It only supports Python 3.12 and later.
+It supports Python 3.12 and later.
 
 
 ## Installation
@@ -50,9 +50,9 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`zip_concurrently()`**<br>Zip multiple async iterables concurrently into a new async iterable.
 
 
-## General principles
+## Notes
 
-- There is no implicit cleanup treatment of async generators, e.g. unlike [`asyncstdlib`](https://asyncstdlib.readthedocs.io/en/stable/index.html#async-iterator-cleanup). If required, as is the case for certain functions such as `buffer_aiter()`, close them explicitly:
+- There is no implicit cleanup treatment of async generators, which is unlike certain libraries like [`asyncstdlib`](https://asyncstdlib.readthedocs.io/en/stable/index.html#async-iterator-cleanup). If required, as is the case for certain functions such as `buffer_aiter()`, generators must be closed explicitly. For example:
   ```py
   agen = get_some_async_generator()
 

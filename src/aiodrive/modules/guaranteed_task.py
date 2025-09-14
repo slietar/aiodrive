@@ -1,61 +1,54 @@
-import asyncio
-from collections.abc import Awaitable, Callable
-from contextvars import Context
-from typing import Self
+from asyncio import Task
+from collections.abc import Awaitable
+from typing import Any, Optional, override
 
 
-class GuaranteedTask[T]:
+class GuaranteedTask[T](Task[T]):
   """
   A variant of `asyncio.Task` that guarantees that the provided awaitable is
-  awaited.
+  awaited before any cancellation occurs.
   """
 
   def __init__(self, awaitable: Awaitable[T], /) -> None:
     async def task_main():
-      self._ready = True
+      self.__ready = True
 
-      for _ in range(self._cancellation_count):
-        self._task.cancel()
+      for _ in range(self.__cancellation_count):
+        parent.cancel()
 
-      await awaitable
+      return await awaitable
 
-    self._cancellation_count = 0
-    self._ready = False
-    self._task = asyncio.create_task(task_main())
+    parent = super()
+    parent.__init__(task_main())
 
-  def add_done_callback(self, fn: Callable[[Self], object], /, *, context: Context | None = None):
-    self._task.add_done_callback(lambda task: fn(self), context=context)
+    self.__cancellation_count = 0
+    self.__ready = False
 
-  def remove_done_callback(self, fn: Callable[[Self], object], /):
-    self._task.remove_done_callback(lambda task: fn(self))
+  @override
+  def cancel(self, msg: Optional[Any] = None):
+    if self.cancelled():
+      return False
 
-  def cancel(self):
-    self._cancellation_count += 1
+    self.__cancellation_count += 1
 
-    if self._ready:
-      self._task.cancel()
+    if self.__ready:
+      super().cancel()
 
-  def exception(self):
-    return self._task.exception()
+    return True
 
+  @override
   def uncancel(self):
-    if self._cancellation_count > 0:
-      self._cancellation_count -= 1
+    if self.__cancellation_count > 0:
+      self.__cancellation_count -= 1
 
-      if self._ready:
-        self._task.uncancel()
+      if self.__ready:
+        super().uncancel()
 
+    return self.__cancellation_count
+
+  @override
   def cancelling(self):
-    return self._cancellation_count
-
-  def cancelled(self):
-    return self._task.cancelled()
-
-  def done(self):
-    return self._task.done()
-
-  def __await__(self):
-    return self._task.__await__()
+    return self.__cancellation_count
 
 
 __all__ = [

@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 from asyncio import Future
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal, Optional, cast
 
@@ -88,6 +88,15 @@ class FutureState[T]:
             result = await awaitable
         except asyncio.CancelledError:
             return cls.new_cancelled()
+        except BaseException as e:
+            return cls.new_failed(e)
+        else:
+            return cls.new_success(result)
+
+    @classmethod
+    def absorb_lambda(cls, func: Callable[[], T], /):
+        try:
+            result = func()
         except BaseException as e:
             return cls.new_failed(e)
         else:

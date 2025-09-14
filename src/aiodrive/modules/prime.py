@@ -1,6 +1,8 @@
 import types
 from collections.abc import Awaitable
 
+from .future_state import FutureState
+
 
 # TODO: Rewrite as async context manager
 
@@ -14,7 +16,8 @@ def prime[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
   one where the returned coroutine is awaited.
 
   If the returned awaitable is not awaited, the closure of the original
-  awaitable is only performed during garbage collection.
+  awaitable is only performed during garbage collection. If the event loop is
+  closed, async cleanup operations will fail.
 
   Returns
   -------
@@ -23,23 +26,28 @@ def prime[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
   """
 
   generator = awaitable.__await__()
-
-  try:
-    hint = generator.send(None)
-  except StopIteration as e:
-    hint = e.value
-    returned = True
-  else:
-    returned = False
+  hint = FutureState.absorb_lambda(lambda: generator.send(None))
 
   @types.coroutine
   def inner():
-    if returned:
-      return hint
+    try:
+      value = hint.apply()
+    except StopIteration as e:
+      return e.value
 
-    yield hint
-    result = yield from generator
-    return result
+    while True:
+      try:
+        yield value
+      except BaseException as e:
+        try:
+          value = generator.throw(e)
+        except StopIteration as e:
+          return e.value
+      else:
+        try:
+          value = generator.send(value)
+        except StopIteration as e:
+          return e.value
 
   return inner()
 

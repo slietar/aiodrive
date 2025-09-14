@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-from asyncio import Task
 from collections.abc import Awaitable
 
 from .cancel import cancel_task
@@ -23,6 +22,9 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   the current and background tasks raise an exception, the exceptions are
   aggregated into an `ExceptionGroup`.
 
+  If the returned context manager is entered, `awaitable` is guaranteed to be
+  awaited.
+
   Parameters
   ----------
   awaitable
@@ -34,7 +36,8 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   ------
   DaemonTaskFinishError
     If `daemon` is `True` and the background task finishes successfully before
-    being cancelled.
+    being cancelled. In particular, this is the case if both the current and
+    background tasks run synchronously.
   """
 
   if daemon:
@@ -49,6 +52,7 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   background_task = GuaranteedTask(target)
 
   def callback(task: GuaranteedTask[None]):
+    # If the background task finished with an exception, cancel the scope.
     if not task.cancelled() and (task.exception() is not None):
       scope.cancel()
 
@@ -61,19 +65,22 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
     background_task.remove_done_callback(callback)
 
     # One of the following is possible:
-    #   - The origin task is being cancelled by the user.
-    #   - The background task raised an exception, which caused the origin task
+    #   (1) The origin task is being cancelled by the user.
+    #   (2) The background task raised an exception, which caused the origin task
     #     to be cancelled.
 
+    # In case (2), this will re-raise the exception from the background task.
     await cancel_task(background_task)
+
+    # In case (1), this will re-raise the CancelledError.
     raise
-  except Exception as e:
+  except BaseException as e:
     background_task.remove_done_callback(callback)
 
     try:
       await cancel_task(background_task)
-    except Exception as background_task_exception:
-      raise ExceptionGroup("", [e, background_task_exception]) from None
+    except BaseException as background_task_exception:
+      raise BaseExceptionGroup("", [e, background_task_exception]) from None
 
     raise
   else:

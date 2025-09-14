@@ -5,7 +5,7 @@ from threading import Condition, Lock
 
 
 @dataclass(slots=True)
-class ThreadSafeButton:
+class ThreadsafeButton:
   """
   A thread-safe class that wakes up registered waiters when called.
   """
@@ -59,5 +59,5 @@ class ThreadSafeButton:
 
 
 __all__ = [
-  'ThreadSafeButton',
+  'ThreadsafeButton',
 ]

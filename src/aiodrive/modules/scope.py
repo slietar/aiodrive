@@ -8,14 +8,22 @@ from typing import Optional
 @dataclass(slots=True)
 class Scope:
   cancellation_count: int = field(default=0, init=False)
-  task: Task = field(repr=False)
+  task: Optional[Task] = field(repr=False)
 
   def cancel(self):
     """
     Cancel the current task.
 
-    The current task will be uncancelled once the scope is exited.
+    The current task is uncancelled once the scope is exited.
+
+    Raises
+    ------
+    RuntimeError
+      If the scope has been exited.
     """
+
+    if self.task is None:
+      raise RuntimeError("Scope has already been exited")
 
     self.task.cancel()
     self.cancellation_count += 1
@@ -40,6 +48,8 @@ async def use_scope_old():
 
     if task.cancelling() != 0:
       raise
+  finally:
+    scope.task = None
 
 
 @dataclass(slots=True)
@@ -91,8 +101,8 @@ class use_scope_new:
       self._token = None
 
 
-use_scope = use_scope_new
-# use_scope = use_scope_old
+# use_scope = use_scope_new
+use_scope = use_scope_old
 
 __all__ = [
   'Scope',

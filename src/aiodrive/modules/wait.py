@@ -17,6 +17,12 @@ async def try_all[T](items: Iterable[Awaitable[T]], /) -> Sequence[T]:
   items
     The coroutines or tasks to wait for. The function returns immediately if the
     iterable is empty.
+
+  Returns
+  -------
+  Sequence[T]
+    A sequence of results from the provided tasks, in the same order as the
+    provided items.
   """
 
   cancelled_exc: Optional[asyncio.CancelledError] = None
@@ -60,6 +66,12 @@ async def wait_all[T](items: Iterable[Awaitable[T]], /) -> Sequence[T]:
   items
     The coroutines or tasks to wait for. The function returns immediately if the
     iterable is empty.
+
+  Returns
+  -------
+  Sequence[T]
+    A sequence of results from the provided tasks, in the same order as the
+    provided items.
   """
 
   cancelled_exc: Optional[asyncio.CancelledError] = None

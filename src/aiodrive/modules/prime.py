@@ -2,6 +2,8 @@ import types
 from collections.abc import Awaitable
 
 
+# TODO: Rewrite as async context manager
+
 def prime[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
   """
   Prime an awaitable such that as much code as possible is executed immediately.
@@ -12,7 +14,7 @@ def prime[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
   one where the returned coroutine is awaited.
 
   If the returned awaitable is not awaited, the closure of the original
-  awaitable is only performed when the event loop is closed.
+  awaitable is only performed during garbage collection.
 
   Returns
   -------
@@ -40,3 +42,8 @@ def prime[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
     return result
 
   return inner()
+
+
+__all__ = [
+  'prime',
+]

@@ -46,9 +46,10 @@ def handle_signals(*signal_codes: SignalCode) -> Iterator[None]:
 
     def callback(signal_code: SignalCode):
         nonlocal handled_signal_code
-        assert handled_signal_code is None
 
         task.cancel()
+
+        # Store the last handled signal code
         handled_signal_code = signal_code
 
     for signal_code in signal_codes:

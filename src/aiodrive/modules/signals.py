@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from signal import Signals as SignalCode
 from typing import Optional
 
+from .scope import use_scope
+
 
 @dataclass(slots=True)
 class SignalHandledException(Exception):
@@ -15,12 +17,14 @@ class SignalHandledException(Exception):
 
 
 @contextlib.contextmanager
-def handle_signals(*signal_codes: SignalCode) -> Iterator[None]:
+def handle_signal(*signal_codes: SignalCode) -> Iterator[None]:
     """
     Handle specified signals by cancelling the current task.
 
     If any of the specified signals is received, the current task is cancelled
-    and the signals are no longer listened for.
+    and upon exiting the context manager, a `SignalHandledException` is raised.
+    Additional signals received while waiting for the context manager cause the
+    current task to be cancelled again.
 
     No other signal listeners for the same codes may be registered for the
     current event loop.
@@ -34,20 +38,18 @@ def handle_signals(*signal_codes: SignalCode) -> Iterator[None]:
     ------
     SignalHandledException
         If a signal is handled and no other other cancellation of the current
-        task occured.
+        task occured. The attribute `signal` contains the last handled signal
+        code.
     """
 
     loop = asyncio.get_event_loop()
-
-    task = asyncio.current_task()
-    assert task is not None
 
     handled_signal_code: Optional[SignalCode] = None
 
     def callback(signal_code: SignalCode):
         nonlocal handled_signal_code
 
-        task.cancel()
+        scope.cancel()
 
         # Store the last handled signal code
         handled_signal_code = signal_code
@@ -56,12 +58,11 @@ def handle_signals(*signal_codes: SignalCode) -> Iterator[None]:
         loop.add_signal_handler(signal_code, functools.partial(callback, signal_code))
 
     try:
-        yield
-    except asyncio.CancelledError as e:
-        if (handled_signal_code is not None) and (task.cancelling() == 1):
-            raise SignalHandledException(handled_signal_code) from e
+        with use_scope() as scope:
+            yield
 
-        raise
+        if handled_signal_code is not None:
+            raise SignalHandledException(handled_signal_code)
     finally:
         for signal_code in signal_codes:
             loop.remove_signal_handler(signal_code)
@@ -81,10 +82,11 @@ async def wait_for_signal(*signal_codes: SignalCode):
     """
 
     loop = asyncio.get_event_loop()
-    future = Future()
+    future = Future[None]()
 
     def handler():
-        future.set_result(None)
+        if not future.done():
+            future.set_result(None)
 
     for signal_code in signal_codes:
         loop.add_signal_handler(signal_code, handler)
@@ -98,6 +100,6 @@ async def wait_for_signal(*signal_codes: SignalCode):
 
 __all__ = [
     'SignalHandledException',
-    'handle_signals',
+    'handle_signal',
     'wait_for_signal',
 ]

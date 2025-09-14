@@ -34,13 +34,15 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`contextualize()`**<br>Run an awaitable as a context manager, ensuring that its task is cancelled when the context manager exits.
 - **`eager_task_group()`**<br>Create a task group that automatically terminates when the current task exits the associated context manager.
 - **`ensure_aiter()`**<br>Ensure that the provided iterable is an async iterable.
-- **`handle_signals()`**<br>Register a signal handler that cancels the current task when the signal is received.
+- **`ensure_correct_cancellation()`**<br>Ensure that an `asyncio.CancelledError` is re-raised if the current task has been cancelled.
+- **`handle_signal()`**<br>Register a signal handler that cancels the current task when the signal is received.
 - **`map_concurrently()`**<br>Map items of an async iterable concurrently into a new async iterable.
 - **`prime()`**<br>Immediately execute as much code of a coroutine as possible before it is awaited.
 - **`race()`**<br>Run multiple tasks and return the result of the first one that finishes, after having cancelled and awaited the other tasks.
 - **`repeat_periodically()`**<br>Create an iterator that yields periodically, taking into account the time taken when the yielded value is consumed.
 - **`run_in_thread_loop()`**<br>Run an awaitable in a separate thread with its own event loop.
 - **`shield()`**<br>Shield a task against cancellation and await it.
+- **`suppress()`**<br>A context manager that suppresses specified exceptions, ensuring that an `asyncio.CancelledError` is re-raised if necessary.
 - **`try_all()`**<br>Run multiple tasks and cancel those still running if one of them raises an exception.
 - **`use_scope()`**<br>Create a context manager that allows for a silent cancellation of the current task.
 - **`wait_all()`**<br>Run multiple tasks without cancelling any if one raises an exception.

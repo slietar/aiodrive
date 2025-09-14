@@ -10,8 +10,7 @@ from .thread_safe_state import ThreadsafeState
 
 async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
     """
-    Run an awaitable in a separate thread with its own event loop, with
-    information on when the thread has started.
+    Launch an awaitable in a separate thread with its own event loop.
 
     This function returns after the first iteration of the event loop in the
     thread has completed.

@@ -17,6 +17,8 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 <!-- - **`OrderedQueue`** – A queue similar to `asyncio.Queue` but that lets producers provide items an unordered manner while consumers receive them in the order defined by producers.
 - **`UnorderedQueue`** – A queue similar to `asyncio.Queue` but with the same interface as `OrderedQueue`. -->
 
+<!-- - **`map_concurrently()`**<br>Map items of an async iterable concurrently into a new async iterable. -->
+
 - **`Button`**<br>A primitive similar to `asyncio.Event` but that resets immediately after being set, useful for triggering waiters.
 - **`Cargo`**<br>A primitive similar to `Button` but that carries a value.
 - **`FutureState`**<br>A primitive for storing a future's state.
@@ -36,10 +38,11 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`ensure_aiter()`**<br>Ensure that the provided iterable is an async iterable.
 - **`ensure_correct_cancellation()`**<br>Ensure that an `asyncio.CancelledError` is re-raised if the current task has been cancelled.
 - **`handle_signal()`**<br>Register a signal handler that cancels the current task when the signal is received.
-<!-- - **`map_concurrently()`**<br>Map items of an async iterable concurrently into a new async iterable. -->
+- **`launch_in_thread_loop()`**<br>Launch an awaitable in a separate thread with its own event loop.
 - **`prime()`**<br>Immediately execute as much code of a coroutine as possible before it is awaited.
 - **`race()`**<br>Run multiple tasks and return the result of the first one that finishes, after having cancelled and awaited the other tasks.
 - **`repeat_periodically()`**<br>Create an iterator that yields periodically, taking into account the time taken when the yielded value is consumed.
+- **`run_in_thread_loop_contextualized()`**<br>Run an awaitable in a separate thread with its own event loop, using a context manager.
 - **`run_in_thread_loop()`**<br>Run an awaitable in a separate thread with its own event loop.
 - **`shield()`**<br>Shield a task against cancellation and await it.
 - **`suppress()`**<br>A context manager that suppresses specified exceptions, ensuring that an `asyncio.CancelledError` is re-raised if necessary.

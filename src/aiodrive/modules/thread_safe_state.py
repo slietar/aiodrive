@@ -30,10 +30,10 @@ class ThreadsafeState[T]:
         # Using a copy because futures may be removed (but not added) while
         # iterating
         for future in self._futures.copy().values():
-          loop = future.get_loop()
-
-          if loop.is_running():
-            loop.call_soon_threadsafe(future.set_result, None)
+          try:
+            future.get_loop().call_soon_threadsafe(future.set_result, None)
+          except RuntimeError:
+            pass
 
         self._futures.clear()
 

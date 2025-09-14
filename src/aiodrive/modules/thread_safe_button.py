@@ -22,10 +22,10 @@ class ThreadsafeButton:
       self._condition.notify_all()
 
       for future in self._futures.values():
-        loop = future.get_loop()
-
-        if loop.is_running():
-          loop.call_soon_threadsafe(future.set_result, None)
+        try:
+          future.get_loop().call_soon_threadsafe(future.set_result, None)
+        except RuntimeError:
+          pass
 
       self._futures.clear()
 

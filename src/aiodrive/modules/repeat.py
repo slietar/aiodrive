@@ -3,9 +3,11 @@ from collections.abc import AsyncIterable
 from time import time
 
 
-async def repeat_periodically(min_interval: int, /) -> AsyncIterable[None]:
+async def repeat_periodically(min_interval: float, /) -> AsyncIterable[None]:
     """
     Create an iterable that yields periodically.
+
+    The first iteration happens immediately.
 
     Parameters
     ----------

@@ -54,7 +54,7 @@ class SmartLock:
     try:
       await asyncio.shield(waiter.future)
 
-      async with use_scope() as context_scope:
+      with use_scope() as context_scope:
         owner = SmartLockOwner(
           context_scope=context_scope,
           waiter=waiter,

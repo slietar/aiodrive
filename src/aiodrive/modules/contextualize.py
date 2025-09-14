@@ -59,7 +59,7 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   background_task.add_done_callback(callback)
 
   try:
-    async with use_scope() as scope:
+    with use_scope() as scope:
       yield
   except asyncio.CancelledError:
     background_task.remove_done_callback(callback)

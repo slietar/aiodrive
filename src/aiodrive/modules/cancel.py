@@ -23,7 +23,7 @@ async def cancel_task(task: Task[object], /):
     except asyncio.CancelledError:
       task.uncancel()
 
-      if task.cancelling() > 1:
+      if task.cancelling() > 0:
         raise
 
 

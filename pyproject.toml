@@ -5,13 +5,10 @@ build-backend = "oryn"
 [project]
 name = "aiodrive"
 version = "1.0"
-description = "Collection of utilies for working with asynchronous Python code"
+description = "Collection of utilities for working with asynchronous Python code"
 license = "EUPL-1.2"
 readme = "readme.md"
 requires-python = "~=3.12"
-dependencies = [
-    "ruff>=0.12.5",
-]
 
 [project.urls]
 Repository = "https://github.com/slietar/aiodrive"

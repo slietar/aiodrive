@@ -38,6 +38,9 @@ class FutureState[T]:
             case "success":
                 future.set_result(self.result)
 
+    def transfer_threadsafe(self, future: Future[T], /):
+        future.get_loop().call_soon_threadsafe(self.transfer, future)
+
     @classmethod
     def new_cancelled(cls):
         return cls(status="cancelled")

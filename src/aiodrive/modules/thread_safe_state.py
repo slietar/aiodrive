@@ -5,9 +5,6 @@ from dataclasses import dataclass, field
 from threading import Condition, Lock
 
 
-MissingSentinel = object()
-
-
 @dataclass(slots=True)
 class ThreadsafeState[T]:
   """
@@ -97,8 +94,6 @@ class ThreadsafeState[T]:
         # This is atomic
         # self._futures.pop(loop, None)
         pass
-
-    return self.value
 
 
 __all__ = [

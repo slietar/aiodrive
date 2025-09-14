@@ -3,10 +3,8 @@ import threading
 from collections.abc import Awaitable
 from typing import Literal, Optional
 
-from .shield import shield
 from .thread_safe_state import ThreadsafeState
 
-# TODO: Start thread immediately
 
 async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
     """

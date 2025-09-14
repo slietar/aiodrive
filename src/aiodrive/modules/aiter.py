@@ -49,6 +49,24 @@ async def buffer_aiter[T](iterable: AsyncIterable[T], /, *, size: Optional[int])
     yield item
 
 
+async def collect[T](iterable: AsyncIterable[T], /):
+  """
+  Collect all items from the given async iterable into a list.
+
+  Parameters
+  ----------
+  iterable
+    The async iterable to collect items from.
+
+  Returns
+  -------
+  list[T]
+    A list containing all items from the iterable.
+  """
+
+  return [item async for item in iterable]
+
+
 def ensure_aiter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterator[T]:
   """
   Create an async iterator from the provided sync or async iterable.

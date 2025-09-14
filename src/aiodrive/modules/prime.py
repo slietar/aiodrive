@@ -4,8 +4,6 @@ from collections.abc import Awaitable
 from .future_state import FutureState
 
 
-# TODO: Rewrite as async context manager
-
 def prime[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
   """
   Prime an awaitable such that as much code as possible is executed immediately.

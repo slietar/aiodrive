@@ -31,18 +31,20 @@ class ThreadsafeLock:
 
   async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
     with self._sync_lock:
-      while True:
-        if self._futures:
-          future = self._futures.popleft()
+      while self._futures:
+        future = self._futures.popleft()
 
-          if future.cancelled():
-            continue
+        if future.cancelled():
+          continue
 
+        try:
           future.get_loop().call_soon_threadsafe(future.set_result, None)
-          break
-        else:
-          self._locked = False
-          break
+        except RuntimeError:
+          continue
+
+        break
+      else:
+        self._locked = False
 
 
 __all__ = [

@@ -36,7 +36,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`ensure_aiter()`**<br>Ensure that the provided iterable is an async iterable.
 - **`ensure_correct_cancellation()`**<br>Ensure that an `asyncio.CancelledError` is re-raised if the current task has been cancelled.
 - **`handle_signal()`**<br>Register a signal handler that cancels the current task when the signal is received.
-- **`map_concurrently()`**<br>Map items of an async iterable concurrently into a new async iterable.
+<!-- - **`map_concurrently()`**<br>Map items of an async iterable concurrently into a new async iterable. -->
 - **`prime()`**<br>Immediately execute as much code of a coroutine as possible before it is awaited.
 - **`race()`**<br>Run multiple tasks and return the result of the first one that finishes, after having cancelled and awaited the other tasks.
 - **`repeat_periodically()`**<br>Create an iterator that yields periodically, taking into account the time taken when the yielded value is consumed.

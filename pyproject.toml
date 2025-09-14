@@ -18,6 +18,7 @@ Repository = "https://github.com/slietar/aiodrive"
 
 [tool.oryn]
 include = ["src/*"]
+ignore = ["/src/aiodrive/experiments"]
 
 [tool.ruff]
 include = ["src/**/*.py"]

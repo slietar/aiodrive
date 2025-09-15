@@ -28,6 +28,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`ThreadsafeButton`**<br>A thread-safe variant of `Button`.
 - **`ThreadsafeState`**<br>A thread-safe primitive for storing and watching a state.
 - **`ThreadsafeLock`**<br>A lock that can be acquired from different threads.
+- **`arun()`**<br>Run an awaitable in a new event loop while enforcing structured concurrency.
 - **`buffer_aiter()`**<br>Pre-fetch items of an async iterable.
 - **`cancel_task()`**<br>Cancel a task and await it.
 - **`cleanup_shield()`**<br>Shield a task against cancellation if it has not been cancelled yet, and await it.

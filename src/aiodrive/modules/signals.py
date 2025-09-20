@@ -26,6 +26,11 @@ def handle_signal(*signal_codes: SignalCode) -> Iterator[None]:
     Additional signals received while waiting for the context manager cause the
     current task to be cancelled again.
 
+    If control is never yielded back to the event loop after a signal is
+    received, for instance because the code inside the context manager is
+    blocking, the current task is not cancelled but the exception is still
+    raised.
+
     No other signal listeners for the same codes may be registered for the
     current event loop.
 
@@ -44,28 +49,31 @@ def handle_signal(*signal_codes: SignalCode) -> Iterator[None]:
 
     loop = asyncio.get_event_loop()
 
+    exited = False
     handled_signal_code: Optional[SignalCode] = None
 
     def callback(signal_code: SignalCode):
         nonlocal handled_signal_code
 
-        scope.cancel()
-
         # Store the last handled signal code
         handled_signal_code = signal_code
+
+        if not exited:
+            scope.cancel()
 
     for signal_code in signal_codes:
         loop.add_signal_handler(signal_code, functools.partial(callback, signal_code))
 
-    try:
-        with use_scope() as scope:
+    with use_scope() as scope:
+        try:
             yield
+        finally:
+            for signal_code in signal_codes:
+                loop.remove_signal_handler(signal_code)
+                exited = True
 
-        if handled_signal_code is not None:
-            raise SignalHandledException(handled_signal_code)
-    finally:
-        for signal_code in signal_codes:
-            loop.remove_signal_handler(signal_code)
+    if handled_signal_code is not None:
+        raise SignalHandledException(handled_signal_code)
 
 
 async def wait_for_signal(*signal_codes: SignalCode):

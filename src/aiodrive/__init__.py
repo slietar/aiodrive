@@ -3,6 +3,7 @@
 from .modules.aiter import *
 from .modules.button import *
 from .modules.cancel import *
+from .modules.checkpoint import *
 from .modules.concurrent_contexts import *
 from .modules.contextualize import *
 from .modules.future_state import *

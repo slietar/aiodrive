@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import functools
 import signal
-from asyncio import Future
+from asyncio import Event, Future
 from collections.abc import Iterator
 from dataclasses import dataclass
 from signal import Signals as SignalCode
@@ -106,8 +106,50 @@ async def wait_for_signal(*signal_codes: SignalCode):
             loop.remove_signal_handler(signal_code)
 
 
+async def watch_signal(*signal_codes: SignalCode):
+    """
+    Watch for any of the specified signals to be received.
+
+    If a signal occurs in between two iterations, the next iteration will
+    immediately yield.
+
+    The generator must be closed so that the signal handlers are removed.
+
+    No other signal listeners for the same codes may be registered for the
+    current event loop.
+
+    Parameters
+    ----------
+    signal_codes
+        The signal codes to watch for e.g. `signal.Signals.SIGINT`.
+
+    Yields
+    ------
+    None
+        Each time any of the specified signals is received.
+    """
+
+    event = Event()
+
+    loop = asyncio.get_event_loop()
+
+    for signal_code in signal_codes:
+        loop.add_signal_handler(signal_code, event.set)
+
+    try:
+        while True:
+            await event.wait()
+            event.clear()
+
+            yield
+    finally:
+        for signal_code in signal_codes:
+            loop.remove_signal_handler(signal_code)
+
+
 __all__ = [
     'SignalHandledException',
     'handle_signal',
     'wait_for_signal',
+    'watch_signal',
 ]

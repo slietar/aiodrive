@@ -39,8 +39,11 @@ def ensure_correct_cancellation():
     raise asyncio.CancelledError
 
 
+class SuppressFailureError(RuntimeError):
+  pass
+
 @contextlib.contextmanager
-def suppress(*exceptions: type[BaseException]):
+def suppress(*exceptions: type[BaseException], strict: bool = False):
   """
   Suppress the specified exceptions in an async context.
 
@@ -55,15 +58,34 @@ def suppress(*exceptions: type[BaseException]):
   ----------
   exceptions
     The exception types to suppress.
+  strict
+    Whether to raise an exception if no exceptions were suppressed.
+
+  Raises
+  ------
+  SuppressFailureError
+    If `strict` is `True` and no exceptions were suppressed.
   """
 
-  with contextlib.suppress(*exceptions):
+  try:
     yield
+  except* exceptions:
+    pass
+  else:
+    if strict:
+      raise SuppressFailureError('No exception to suppress')
 
-  ensure_correct_cancellation()
+  try:
+    current_task = asyncio.current_task()
+  except RuntimeError:
+    pass
+  else:
+    if current_task is not None:
+      ensure_correct_cancellation()
 
 
 __all__ = [
+  'SuppressFailureError',
   'cancel_task',
   'ensure_correct_cancellation',
   'suppress',

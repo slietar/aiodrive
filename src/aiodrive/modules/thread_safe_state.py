@@ -19,6 +19,11 @@ class ThreadsafeState[T]:
   def set_value(self, value: T, /):
     """
     Set the state value and wake up all registered waiters if it changed.
+
+    Parameters
+    ----------
+    value
+      The new state value.
     """
 
     with self._condition:
@@ -63,6 +68,12 @@ class ThreadsafeState[T]:
   def wait_until(self, fn: Callable[[T], bool], /):
     """
     Wait for a state change.
+
+    Parameters
+    ----------
+    fn
+      A function that takes the current state value and returns `True` if the
+      wait should end.
 
     Returns
     -------

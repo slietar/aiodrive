@@ -47,12 +47,9 @@ def suppress(*exceptions: type[BaseException], strict: bool = False):
   """
   Suppress the specified exceptions in an async context.
 
-  Unlike `contextlib.suppress`, this context manager also ensures that if the
-  current task was cancelled while inside the context, a `CancelledError` is
-  re-raised upon exiting the context.
-
-  Despite being synchronous, this function may only be used while in an event
-  loop.
+  Unlike `contextlib.suppress`, this context manager ensures that, if there is a
+  running event loop and the current task was cancelled while inside the
+  context, a `CancelledError` is re-raised upon exiting the context.
 
   Parameters
   ----------

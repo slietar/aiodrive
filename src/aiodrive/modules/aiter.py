@@ -94,5 +94,6 @@ def ensure_aiter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterato
 
 __all__ = [
   'buffer_aiter',
+  'collect',
   'ensure_aiter',
 ]

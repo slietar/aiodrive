@@ -97,9 +97,9 @@ class FutureState[T]:
             return cls.new_success(result)
 
     @classmethod
-    def absorb_lambda(cls, func: Callable[[], T], /):
+    def absorb_lambda[**P](cls, func: Callable[P, T], *args: P.args, **kwargs: P.kwargs):
         try:
-            result = func()
+            result = func(*args, **kwargs)
         except BaseException as e:
             return cls.new_failed(e)
         else:

@@ -41,6 +41,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`handle_signal()`**<br>Register a signal handler that cancels the current task when the signal is received.
 - **`launch_in_thread_loop()`**<br>Launch an awaitable in a separate thread with its own event loop.
 - **`prime()`**<br>Immediately execute as much code of a coroutine as possible before it is awaited.
+- **`primed()`**<br>Decorate the given function such that it returns a primed awaitable.
 - **`race()`**<br>Run multiple tasks and return the result of the first one that finishes, after having cancelled and awaited the other tasks.
 - **`repeat_periodically()`**<br>Create an iterator that yields periodically, taking into account the time taken when the yielded value is consumed.
 - **`run_in_thread_loop_contextualized()`**<br>Run an awaitable in a separate thread with its own event loop, using a context manager.

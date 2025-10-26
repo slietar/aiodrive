@@ -3,7 +3,7 @@ import contextlib
 import functools
 import signal
 from asyncio import Event, Future
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from signal import Signals as SignalCode
 from typing import Optional
@@ -17,7 +17,7 @@ class SignalHandledException(Exception):
 
 
 @contextlib.contextmanager
-def handle_signal(*signal_codes: SignalCode) -> Iterator[None]:
+def handle_signal(signal_code: Sequence[SignalCode] | SignalCode, /) -> Iterator[None]:
     """
     Handle specified signals by cancelling the current task.
 
@@ -36,8 +36,8 @@ def handle_signal(*signal_codes: SignalCode) -> Iterator[None]:
 
     Parameters
     ----------
-    signal_codes
-        The signal codes to handle e.g. `signal.Signals.SIGINT`.
+    signal_code
+        The signal code or codes to handle e.g. `signal.Signals.SIGINT`.
 
     Raises
     ------
@@ -47,36 +47,41 @@ def handle_signal(*signal_codes: SignalCode) -> Iterator[None]:
         code.
     """
 
+    if isinstance(signal_code, Sequence):
+        signal_codes = list(signal_code)
+    else:
+        signal_codes = [signal_code]
+
     loop = asyncio.get_event_loop()
 
     exited = False
     handled_signal_code: Optional[SignalCode] = None
 
-    def callback(signal_code: SignalCode):
+    def callback(rec_signal_code: SignalCode):
         nonlocal handled_signal_code
 
         # Store the last handled signal code
-        handled_signal_code = signal_code
+        handled_signal_code = rec_signal_code
 
         if not exited:
             scope.cancel()
 
-    for signal_code in signal_codes:
-        loop.add_signal_handler(signal_code, functools.partial(callback, signal_code))
+    for rec_signal_code in signal_codes:
+        loop.add_signal_handler(rec_signal_code, functools.partial(callback, rec_signal_code))
 
     with use_scope() as scope:
         try:
             yield
         finally:
-            for signal_code in signal_codes:
-                loop.remove_signal_handler(signal_code)
+            for rec_signal_code in signal_codes:
+                loop.remove_signal_handler(rec_signal_code)
                 exited = True
 
     if handled_signal_code is not None:
         raise SignalHandledException(handled_signal_code)
 
 
-async def wait_for_signal(*signal_codes: SignalCode):
+async def wait_for_signal(signal_code: Sequence[SignalCode] | SignalCode, /):
     """
     Wait for any of the specified signals to be received.
 
@@ -86,8 +91,13 @@ async def wait_for_signal(*signal_codes: SignalCode):
     Parameters
     ----------
     signal_codes
-        The signal codes to wait for e.g. `signal.Signals.SIGINT`.
+        The signal code or codes to wait for e.g. `signal.Signals.SIGINT`.
     """
+
+    if isinstance(signal_code, Sequence):
+        signal_codes = list(signal_code)
+    else:
+        signal_codes = [signal_code]
 
     loop = asyncio.get_event_loop()
     future = Future[None]()
@@ -96,17 +106,17 @@ async def wait_for_signal(*signal_codes: SignalCode):
         if not future.done():
             future.set_result(None)
 
-    for signal_code in signal_codes:
-        loop.add_signal_handler(signal_code, handler)
+    for rec_signal_code in signal_codes:
+        loop.add_signal_handler(rec_signal_code, handler)
 
     try:
         await future
     finally:
-        for signal_code in signal_codes:
-            loop.remove_signal_handler(signal_code)
+        for rec_signal_code in signal_codes:
+            loop.remove_signal_handler(rec_signal_code)
 
 
-async def watch_signal(*signal_codes: SignalCode):
+async def watch_signal(signal_code: Sequence[SignalCode] | SignalCode, /):
     """
     Watch for any of the specified signals to be received.
 
@@ -121,7 +131,7 @@ async def watch_signal(*signal_codes: SignalCode):
     Parameters
     ----------
     signal_codes
-        The signal codes to watch for e.g. `signal.Signals.SIGINT`.
+        The signal code or codes to watch for e.g. `signal.Signals.SIGINT`.
 
     Yields
     ------
@@ -129,12 +139,16 @@ async def watch_signal(*signal_codes: SignalCode):
         Each time any of the specified signals is received.
     """
 
-    event = Event()
+    if isinstance(signal_code, Sequence):
+        signal_codes = list(signal_code)
+    else:
+        signal_codes = [signal_code]
 
     loop = asyncio.get_event_loop()
+    event = Event()
 
-    for signal_code in signal_codes:
-        loop.add_signal_handler(signal_code, event.set)
+    for rec_signal_code in signal_codes:
+        loop.add_signal_handler(rec_signal_code, event.set)
 
     try:
         while True:
@@ -143,8 +157,8 @@ async def watch_signal(*signal_codes: SignalCode):
 
             yield
     finally:
-        for signal_code in signal_codes:
-            loop.remove_signal_handler(signal_code)
+        for rec_signal_code in signal_codes:
+            loop.remove_signal_handler(rec_signal_code)
 
 
 __all__ = [

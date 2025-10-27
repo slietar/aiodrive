@@ -171,11 +171,11 @@ class EventSimulatorLoop(asyncio.AbstractEventLoop):
 
         self._timer_handles[handle] = event
 
-        async def run():
+        async def run_call_later():
             event.wait(delay)
             handle._run()
 
-        asyncio.create_task(run())  # noqa: RUF006
+        asyncio.create_task(run_call_later())  # noqa: RUF006
 
         return handle
 
@@ -226,8 +226,22 @@ class EventSimulatorLoop(asyncio.AbstractEventLoop):
     @override
     def create_future(self):
         # Not sure why this is here rather than in AbstractEventLoop.
-        return asyncio.Future(loop=self)
+        # return asyncio.Future(loop=self)
 
+        return EventSimulatorFuture(loop=self)
+
+
+class EventSimulatorFuture(Future):
+    @override
+    def __await__(self):
+        loop = self.get_loop()
+        assert isinstance(loop, EventSimulatorLoop)
+
+        while not self.done():
+            with loop._lock:
+                pass
+
+        yield from super().__await__()
 
 class EventSimulatorTask(Future):
     def __init__(self, coro, *, loop: EventSimulatorLoop, name: str):
@@ -240,7 +254,7 @@ class EventSimulatorTask(Future):
 
             while True:
                 try:
-                    with loop._lock:
+                    # with loop._lock:
                         if (current_future is None) or current_future.done():
                             # TODO: Probably replace coro.send(None) with coro.send(current_future.result())
                             current_future = coro.send(None)
@@ -266,15 +280,18 @@ async def a():
 
 async def b():
     print("Hello from b")
-    await asyncio.sleep(1.2)
+    await b1()
     print("Goodbye from b")
+
+async def b1():
+    await asyncio.sleep(1.2)
 
 async def main():
     # x = await asyncio.create_task(a())
     # print("a returned", x)
     asyncio.create_task(a())
     asyncio.create_task(b())
-    await asyncio.sleep(0.2)
+    await asyncio.sleep(0.4)
     print("Starting simulation")
 
 # asyncio.run(main(), loop_factory=ThreadEventLoop)

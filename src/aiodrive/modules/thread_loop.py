@@ -68,7 +68,9 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
 
             # This should be safe given that the thread has exited
             # It allows the exception to have a proper traceback
-            return await thread_task
+            result = await thread_task
+
+        return result
 
     try:
         await stage.wait_until(lambda value: value != "preparing")

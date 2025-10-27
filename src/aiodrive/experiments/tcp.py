@@ -1,8 +1,9 @@
 import asyncio
 import contextlib
+import os
 import signal
-from asyncio import Queue, QueueEmpty, QueueFull, StreamReader, StreamWriter
-from collections.abc import Sequence
+from asyncio import StreamReader, StreamWriter, TaskGroup
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional, override
@@ -46,38 +47,49 @@ class Connection:
 
 
 @dataclass(slots=True)
-class TcpServer:
+class TCPServer:
   bindings: frozenset[SockName]
-  _queue: Queue[tuple[StreamReader, StreamWriter]]
-
-  async def __aiter__(self):
-    while True:
-      reader, writer = await self._queue.get()
-      socket = writer.transport.get_extra_info('socket')
-
-      client_name = SockName.parse(socket.getpeername())
-      server_name = SockName.parse(socket.getsockname())
-
-      info = Connection(
-        client_name,
-        server_name,
-
-        reader,
-        writer,
-      )
-
-      yield info
 
   @classmethod
   @contextlib.asynccontextmanager
-  async def listen(cls, host: Sequence[str] | str, *, port: Optional[int] = None):
-    queue = Queue[tuple[StreamReader, StreamWriter]]()
+  async def listen(cls, handler: Callable[[Connection], Awaitable[None]], host: Sequence[str] | str, *, port: Optional[int] = None):
+    """
+    Create a TCP server.
+
+    Parameters
+    ----------
+    handler
+      A function that is called for each new connection. The connection is
+      closed, if not already closed, when the handler returns.
+    host
+      The host or hosts to bind to.
+    port
+      The port to bind to.
+
+    Returns
+    -------
+    AbstractAsyncContextManager[TCPServer]
+      An async context manager that yields the created TCP server. The server is
+      closed when the context manager exits. This is done in three steps: (1)
+      the server stops accepting new connections (2) existing connections
+      handlers are cancelled, leading to the closure of their connections (3)
+      the server is closed.
+    """
 
     def handle_connection_sync(reader: StreamReader, writer: StreamWriter):
+      group.create_task(handle_connection_async(reader, writer))
+
+    async def handle_connection_async(reader: StreamReader, writer: StreamWriter):
       try:
-        queue.put_nowait((reader, writer))
-      except QueueFull:
+        await handler(Connection(
+          SockName.parse(writer.transport.get_extra_info('peername')),
+          SockName.parse(writer.transport.get_extra_info('sockname')),
+          reader,
+          writer,
+        ))
+      finally:
         writer.close()
+        await writer.wait_closed()
 
     server = await asyncio.start_server(handle_connection_sync, host, port)
 
@@ -86,33 +98,40 @@ class TcpServer:
     })
 
     try:
-      yield cls(bindings, queue)
+      async with TaskGroup() as group:
+        try:
+          yield cls(bindings)
+        finally:
+          server.close()
     finally:
-      server.close()
-
-      try:
-        while True:
-          _reader, writer = queue.get_nowait()
-          writer.close()
-      except QueueEmpty:
-        pass
-
       await server.wait_closed()
 
 
+# ----
+
+
 async def main():
+  print(os.getpid())
+
   try:
     with handle_signal(signal.SIGINT):
-      async with TcpServer.listen('localhost', port=8995) as server:
+      async def handler(conn: Connection):
+        print('New connection from', conn.client_name)
+
+        try:
+          while await conn.reader.read(1024):
+            print('Waiting for data...')
+        finally:
+          print('Exiting')
+        # await asyncio.sleep(5)
+
+      async with TCPServer.listen(handler, 'localhost', port=8995) as server:
         for binding in server.bindings:
           print('Listening on', binding)
 
-        async for conn in server:
-          print('New connection from', conn.client_name)
+        await asyncio.Future()
+
   except* SignalHandledException:
     print('Shutting down gracefully...')
-
-
-import asyncio
 
 asyncio.run(main())

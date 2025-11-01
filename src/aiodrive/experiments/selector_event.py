@@ -1,4 +1,5 @@
 import asyncio
+from collections import namedtuple
 import contextlib
 import os
 import select
@@ -44,57 +45,10 @@ async def KqueueEventManager(
         kq.close()
 
 
-# type EventType = Literal[
-#     'attrib',
-#     'delete',
-#     'extend',
-#     'link',
-#     'rename',
-#     'revoke',
-#     'write',
-# ]
-
-# @contextlib.asynccontextmanager
-# async def watch_file(file: IO, callback: Callable[[str], None], /, *, events: Container[EventType]):
-#     """
-#     Watch a file for changes using kqueue.
-
-#     Parameters
-#     ----------
-#     path
-#         The path to the file to watch.
-#     callback
-#         The callback to call when an event occurs.
-#     events
-#         The events to watch for. Possible values are:
-#         - `attrib`: File or directory attributes changed.
-#         - `delete`: File or directory was deleted.
-#         - `extend`: File was extended.
-#         - `rename`: File or directory was renamed.
-#     """
-
-#     def internal_callback(event: select.kevent):
-#         print(event.data, event.udata)
-#         # if (event.fflags & select.KQ_NOTE_WRITE) > 0:
-
-#     fflags = 0
-
-#     # if 'attrib' in events:
-#     #     fflags |= select.KQ_NOTE_ATTRIB
-#     # if 'delete' in events:
-#     #     fflags |= select.KQ_NOTE_DELETE
-
-#     kev = select.kevent(
-#         file.fileno(),
-#         filter=select.KQ_FILTER_VNODE,
-#         flags=(select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR),
-#         fflags=(select.KQ_NOTE_RENAME),
-#         # fflags=(select.KQ_NOTE_RENAME | select.KQ_NOTE_ATTRIB | select.KQ_NOTE_DELETE | select.KQ_NOTE_EXTEND | select.KQ_NOTE_LINK | select.KQ_NOTE_REVOKE | select.KQ_NOTE_WRITE),
-#     )
-
-#     async with watch_for_kqueue_events([kev], internal_callback):
-#         yield
-
+@dataclass(slots=True)
+class WatchedInfo:
+    fd: int
+    path: Path
 
 @contextlib.asynccontextmanager
 async def watch_path(
@@ -102,93 +56,99 @@ async def watch_path(
     callback: Callable[[Literal['create', 'delete', 'write']], None],
     /,
 ):
-    target_path = Path(raw_path).resolve()
+    # TODO: Docs + error handling + __all__
 
-    fd: Optional[int] = None
-    watched_path = target_path
-    # missing_parts = list[str]()
+    target_path = Path(raw_path).resolve()
+    watched: Optional[WatchedInfo] = None
 
     def internal_callback(event: select.kevent):
-        watching_directory = watched_path != target_path
+        nonlocal watched
+        assert watched is not None
+
+        watching_directory = watched.path != target_path
 
         if (event.fflags & select.KQ_NOTE_WRITE) > 0:
             if watching_directory:
-                # A node was potentially added to the watched directory
-                update(direction_down=False)
+                # The target file was potentially added to the watched directory
+                update(watched.path / target_path.parts[len(watched.path.parts)])
             else:
                 callback('write')
 
         if (event.fflags & (select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME)) > 0:
+            new_path = watched.path.parent
+            os.close(watched.fd)
+            watched = None
+
             if watching_directory:
                 # The watched directory was deleted or renamed
                 pass
             else:
                 callback('delete')
 
-            update(direction_down=True)
+            update(new_path)
 
-    def update(*, direction_down: bool):
-        nonlocal watched_path
-        nonlocal fd
+    def update(guess_path: Path, /):
+        nonlocal watched
 
-        attempted_path = watched_path
-
-        if fd is not None:
-            os.close(fd)
-            fd = None
+        attempted_fd = None
+        attempted_path = guess_path
 
         while True:
-            print(f"Attempting to watch: {attempted_path}")
+            print("Starting update loop")
 
-            try:
-                new_fd = os.open(
-                    attempted_path,
-                    os.O_RDONLY | (os.O_DIRECTORY if attempted_path != target_path else 0),
-                )
-            except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
-                if fd is not None:
-                    # Done searching
-                    break
+            while True:
+                print(f"Attempting to watch: {attempted_path}")
 
-                attempted_path = attempted_path.parent
-            else:
-                if fd is not None:
-                    os.close(fd)
+                if (watched is not None) and (attempted_path == watched.path):
+                    print("  Skipping")
+                    return
 
-                fd = new_fd
-                watched_path = attempted_path
+                try:
+                    new_fd = os.open(
+                        attempted_path,
+                        os.O_RDONLY | (os.O_DIRECTORY if attempted_path != target_path else 0),
+                    )
+                except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
+                    attempted_path = attempted_path.parent
 
-                if attempted_path != target_path:
-                    attempted_path /= target_path.parts[len(attempted_path.parts)]
+                    if attempted_fd is not None:
+                        break
                 else:
-                    break
+                    if attempted_fd is not None:
+                        os.close(attempted_fd)
 
+                    attempted_fd = new_fd
 
-        # assert fd is not None
+                    if attempted_path != target_path:
+                        attempted_path /= target_path.parts[len(attempted_path.parts)]
+                    else:
+                        break
 
-        if watched_path == target_path:
-            callback('create')
+            watched = WatchedInfo(fd=attempted_fd, path=attempted_path)
 
-        manager.update([
-            select.kevent(
-                fd,
-                filter=select.KQ_FILTER_VNODE,
-                flags=(select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR),
-                fflags=(select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME | select.KQ_NOTE_WRITE),
-            ),
-        ])
+            manager.update([
+                select.kevent(
+                    watched.fd,
+                    filter=select.KQ_FILTER_VNODE,
+                    flags=(select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR),
+                    fflags=(select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME | select.KQ_NOTE_WRITE),
+                ),
+            ])
+
+            if watched.path == target_path:
+                callback('create')
 
     try:
         async with KqueueEventManager(internal_callback) as manager:
-            update(direction_down=True)
+            update(target_path)
             yield
     finally:
-        if fd is not None:
-            os.close(fd)
+        if watched is not None:
+            os.close(watched.fd)
 
 
-# async def main():
-#     async with watch_path('w/test1.txt', print):
-#         await asyncio.Future()
+async def main():
+    async with watch_path('w/test1.txt', print):
+        await asyncio.Future()
 
-# asyncio.run(main())
+asyncio.run(main())

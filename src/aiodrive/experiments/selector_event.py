@@ -70,77 +70,85 @@ async def watch_path(
         if (event.fflags & select.KQ_NOTE_WRITE) > 0:
             if watching_directory:
                 # The target file was potentially added to the watched directory
-                update(watched.path / target_path.parts[len(watched.path.parts)])
+                update_up(watched.path)
             else:
                 callback('write')
 
         if (event.fflags & (select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME)) > 0:
-            new_path = watched.path.parent
-            os.close(watched.fd)
-            watched = None
-
             if watching_directory:
                 # The watched directory was deleted or renamed
                 pass
             else:
                 callback('delete')
 
-            update(new_path)
+            update_down(watched.path)
 
-    def update(guess_path: Path, /):
+
+    def try_open(path: Path, /):
+        try:
+            return os.open(
+                path,
+                os.O_RDONLY | (os.O_DIRECTORY if path != target_path else 0),
+            )
+        except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
+            return None
+
+    def update_down(guess_path_inclusive: Path, /):
+        current_path = guess_path_inclusive
+
+        while (fd := try_open(current_path)) is None:
+            current_path = current_path.parent
+
+        update(fd, current_path)
+
+    def update_up(guess_path_exclusive: Path, /):
+        current_fd: Optional[int] = None
+        current_path = guess_path_exclusive
+
+        while current_path != target_path:
+            current_path /= target_path.parts[len(current_path.parts)]
+            fd = try_open(current_path)
+
+            if fd is None:
+                break
+
+            if current_fd is not None:
+                os.close(current_fd)
+
+            current_fd = fd
+
+        if current_fd is not None:
+            update(current_fd, current_path)
+
+    def update(fd: int, path: Path, /):
         nonlocal watched
 
-        attempted_fd = None
-        attempted_path = guess_path
+        if (watched is not None) and (watched.path == path):
+            return
 
-        while True:
-            print("Starting update loop")
+        if watched is not None:
+            os.close(watched.fd)
 
-            while True:
-                print(f"Attempting to watch: {attempted_path}")
+        watched = WatchedInfo(fd=fd, path=path)
+        print(f'Watching: {watched.path}')
 
-                if (watched is not None) and (attempted_path == watched.path):
-                    print("  Skipping")
-                    return
+        manager.update([
+            select.kevent(
+                watched.fd,
+                filter=select.KQ_FILTER_VNODE,
+                flags=(select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR),
+                fflags=(select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME | select.KQ_NOTE_WRITE),
+            ),
+        ])
 
-                try:
-                    new_fd = os.open(
-                        attempted_path,
-                        os.O_RDONLY | (os.O_DIRECTORY if attempted_path != target_path else 0),
-                    )
-                except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
-                    attempted_path = attempted_path.parent
-
-                    if attempted_fd is not None:
-                        break
-                else:
-                    if attempted_fd is not None:
-                        os.close(attempted_fd)
-
-                    attempted_fd = new_fd
-
-                    if attempted_path != target_path:
-                        attempted_path /= target_path.parts[len(attempted_path.parts)]
-                    else:
-                        break
-
-            watched = WatchedInfo(fd=attempted_fd, path=attempted_path)
-
-            manager.update([
-                select.kevent(
-                    watched.fd,
-                    filter=select.KQ_FILTER_VNODE,
-                    flags=(select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR),
-                    fflags=(select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME | select.KQ_NOTE_WRITE),
-                ),
-            ])
-
-            if watched.path == target_path:
-                callback('create')
+        if watched.path == target_path:
+            callback('create')
+        else:
+            update_up(watched.path)
 
     try:
         async with KqueueEventManager(internal_callback) as manager:
-            update(target_path)
+            update_down(target_path)
             yield
     finally:
         if watched is not None:

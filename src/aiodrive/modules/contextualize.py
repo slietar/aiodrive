@@ -7,12 +7,8 @@ from .guaranteed_task import GuaranteedTask
 from .scope import use_scope
 
 
-class DaemonTaskFinishError(Exception):
-  __slots__ = ()
-
-
 @contextlib.asynccontextmanager
-async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
+async def contextualize(awaitable: Awaitable[None], /):
   """
   Transform an awaitable into an async context manager.
 
@@ -22,34 +18,15 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
   the current and background tasks raise an exception, the exceptions are
   aggregated into an `ExceptionGroup`.
 
-  If the returned context manager is entered, `awaitable` is guaranteed to be
-  awaited.
-
   Parameters
   ----------
   awaitable
-    The awaitable to run in the background.
-  daemon
-    Whether the awaitable is expected to run forever until cancelled.
-
-  Raises
-  ------
-  DaemonTaskFinishError
-    If `daemon` is `True` and the background task finishes successfully before
-    being cancelled. In particular, this is the case if both the current and
-    background tasks run synchronously.
+    The awaitable to run in the background. If the returned context manager is
+    entered, it is awaited exactly once, and it is otherwise awaited at most
+    once.
   """
 
-  if daemon:
-    async def create_target():
-      await awaitable
-      raise DaemonTaskFinishError
-
-    target = create_target()
-  else:
-    target = awaitable
-
-  background_task = GuaranteedTask(target)
+  background_task = GuaranteedTask(awaitable)
 
   def callback(task: GuaranteedTask[None]):
     # If the background task finished with an exception, cancel the scope.
@@ -89,6 +66,5 @@ async def contextualize(awaitable: Awaitable[None], /, *, daemon: bool = False):
 
 
 __all__ = [
-  'DaemonTaskFinishError',
   'contextualize',
 ]

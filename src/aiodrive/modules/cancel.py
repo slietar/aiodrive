@@ -7,6 +7,8 @@ async def cancel_task(task: Task[object], /):
   """
   Cancel and await the provided task.
 
+  If raised, the `asyncio.CancelledError` exception is suppressed.
+
   Parameters
   ----------
   task

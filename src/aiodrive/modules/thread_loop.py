@@ -102,7 +102,7 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
 
 
 @contextlib.asynccontextmanager
-async def run_in_thread_loop_contextualized(target: Awaitable[None], /, *, daemon: bool = False) -> AsyncIterator[None]:
+async def run_in_thread_loop_contextualized(target: Awaitable[None], /) -> AsyncIterator[None]:
     """
     Run an awaitable in a separate thread with its own event loop, using a
     context manager.
@@ -114,8 +114,6 @@ async def run_in_thread_loop_contextualized(target: Awaitable[None], /, *, daemo
     ----------
     target
         The awaitable to run in a separate thread.
-    daemon
-        See `contextualize`.
 
     Returns
     -------
@@ -126,7 +124,6 @@ async def run_in_thread_loop_contextualized(target: Awaitable[None], /, *, daemo
 
     async with contextualize(
         await launch_in_thread_loop(target),
-        daemon=daemon,
     ):
         yield
 

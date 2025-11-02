@@ -1,12 +1,14 @@
 import asyncio
+import functools
 from asyncio import Task
-from collections.abc import Awaitable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Never, Optional
 
 from ..modules.cancel import cancel_task
 from ..modules.contextualize import contextualize
+from ..modules.daemon import ensure_daemon
 
 
 @dataclass(init=False, slots=True)
@@ -31,7 +33,7 @@ class Handle:
   _task: Task[Never] = field(repr=False)
 
   def __init__(self, awaitable: Awaitable[Never], /):
-    self._task = asyncio.ensure_future(awaitable)
+    self._task = asyncio.ensure_future(ensure_daemon(awaitable))
 
   def __await__(self):
     return self._task.__await__()
@@ -56,13 +58,14 @@ class PendingHandle[T]:
   def __init__(self, awaitable: Awaitable[tuple[T, Awaitable[Never]]], /):
     self._awaitable = awaitable
 
+  async def start(self):
+    value, daemon_awaitable = await self._awaitable
+    return value, Handle(daemon_awaitable)
+
   async def __aenter__(self):
-    value, next_awaitable = await self._awaitable
+    value, daemon_awaitable = await self._awaitable
 
-    async def func():
-      await next_awaitable
-
-    self._contextualized = contextualize(func(), daemon=True)
+    self._contextualized = contextualize(ensure_daemon(daemon_awaitable))
     await self._contextualized.__aenter__()
 
     return value
@@ -71,14 +74,49 @@ class PendingHandle[T]:
     return await self._contextualized.__aexit__(exc_type, exc_value, traceback)
 
 
-async def main():
-  async def a():
-    while True:
-      pass
+def pending_handle[**P, T](func: Callable[P, AsyncIterator[T]], /):
+  @functools.wraps(func)
+  def new_func(*args: P.args, **kwargs: P.kwargs):
+    iterator = aiter(func(*args, **kwargs))
 
-  async with Handle(a()):
+    async def first_call():
+      try:
+        value = await anext(iterator)
+      except StopAsyncIteration:
+        raise RuntimeError('Generator should yield')
+
+      return value, second_call()
+
+    async def second_call():
+      try:
+        await anext(iterator)
+      except StopAsyncIteration:
+        raise RuntimeError('Generator should not return')
+      else:
+        raise RuntimeError('Generator should not yield')
+
+    return PendingHandle(first_call())
+
+  return new_func
+
+
+async def main():
+  @pending_handle
+  async def a():
+    yield 24
+
+    try:
+      await asyncio.Future()
+    finally:
+      print("Cleaning up")
+
+  x = a()
+
+  async with x:
     print("Handle is running")
-    await asyncio.sleep(2)
+    await asyncio.sleep(.5)
+
+  print("Done")
 
 
 asyncio.run(main())

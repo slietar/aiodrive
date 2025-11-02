@@ -6,6 +6,8 @@ from .modules.cancel import *
 from .modules.checkpoint import *
 from .modules.concurrent_contexts import *
 from .modules.contextualize import *
+from .modules.daemon import *
+from .modules.event_loop import *
 from .modules.future_state import *
 from .modules.guaranteed_task import *
 from .modules.latch import *

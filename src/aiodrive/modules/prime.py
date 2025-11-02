@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from types import CoroutineType
 from typing import Any, Optional
 
-from .event_loop import set_loop
+from .event_loop import set_event_loop
 from .future_state import FutureState
 
 
@@ -41,7 +41,7 @@ def prime[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = 
 
   generator = awaitable.__await__()
 
-  with set_loop(loop) if loop is not None else contextlib.nullcontext():
+  with set_event_loop(loop) if loop is not None else contextlib.nullcontext():
     hint = FutureState.absorb_lambda(generator.send, None)
 
   @types.coroutine

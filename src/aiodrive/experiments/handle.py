@@ -12,12 +12,11 @@ from ..modules.daemon import ensure_daemon
 
 
 @dataclass(init=False, slots=True)
-class Handle:
+class DaemonHandle:
   """
-  A class used to manage the awaiting and cancellation of an awaitable that
-  never returns.
+  A class that manages the awaiting and cancellation of a daemon awaitable.
 
-  The awaitable is wrapped as a task as soon as the `Handle` instance is
+  The awaitable is wrapped as a task as soon as the `DaemonHandle` instance is
   created. It can be consumed in three ways:
 
   1. By awaiting the instance and employing an external cancellation mechanism.
@@ -39,11 +38,8 @@ class Handle:
     return self._task.__await__()
 
   async def __aenter__(self):
-    async def func():
-      await self._task
-
     assert self._contextualized is not None
-    self._contextualized = contextualize(func())
+    self._contextualized = contextualize(self._task)
     await self._contextualized.__aenter__()
 
   async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
@@ -54,27 +50,30 @@ class Handle:
     await cancel_task(self._task)
 
 
+@dataclass(slots=True)
 class PendingHandle[T]:
-  def __init__(self, awaitable: Awaitable[tuple[T, Awaitable[Never]]], /):
-    self._awaitable = awaitable
+  _awaitable: Awaitable[tuple[T, Awaitable[Never]]] = field(repr=False)
+  _contextualized: Optional[AbstractAsyncContextManager[None]] = field(default=None, init=False, repr=False)
 
   async def start(self):
     value, daemon_awaitable = await self._awaitable
-    return value, Handle(daemon_awaitable)
+    return value, DaemonHandle(daemon_awaitable)
 
   async def __aenter__(self):
     value, daemon_awaitable = await self._awaitable
 
+    assert self._contextualized is None
     self._contextualized = contextualize(ensure_daemon(daemon_awaitable))
     await self._contextualized.__aenter__()
 
     return value
 
   async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
+    assert self._contextualized is not None
     return await self._contextualized.__aexit__(exc_type, exc_value, traceback)
 
 
-def pending_handle[**P, T](func: Callable[P, AsyncIterator[T]], /):
+def using_pending_handle[**P, T](func: Callable[P, AsyncIterator[T]], /):
   @functools.wraps(func)
   def new_func(*args: P.args, **kwargs: P.kwargs):
     iterator = aiter(func(*args, **kwargs))
@@ -101,7 +100,7 @@ def pending_handle[**P, T](func: Callable[P, AsyncIterator[T]], /):
 
 
 async def main():
-  @pending_handle
+  @using_pending_handle
   async def a():
     yield 24
 
@@ -112,8 +111,8 @@ async def main():
 
   x = a()
 
-  async with x:
-    print("Handle is running")
+  async with x as y:
+    print("Handle is running", y)
     await asyncio.sleep(.5)
 
   print("Done")

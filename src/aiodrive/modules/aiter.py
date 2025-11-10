@@ -1,6 +1,6 @@
 from collections import deque
-from collections.abc import AsyncIterable, AsyncIterator, Iterable
-from typing import Optional
+from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
+from typing import Optional, cast, overload
 
 from .contextualize import contextualize
 from .latch import Latch
@@ -92,8 +92,87 @@ def ensure_aiter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterato
     return create_aiter()
 
 
+initial_missing = object()
+
+@overload
+async def reduce[T](reducer: Callable[[T, T], T], iterable: AsyncIterable[T], /):
+  ...
+
+@overload
+async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T], /, initial: S):
+  ...
+
+async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T], /, initial: S = initial_missing):
+  """
+  Reduce the items from the provided async iterable.
+
+  Parameters
+  ----------
+  function
+    The reduction function taking the accumulator and the next item.
+  iterable
+    The async iterable to reduce.
+  initial
+    The initial value for the accumulator. If not provided, the iterable must
+    have at least one item, which is used as the initial accumulator.
+
+  Returns
+  -------
+  S
+    The final accumulated value.
+  """
+  iterator = aiter(iterable)
+
+  if initial is not initial_missing:
+    accumulator = initial
+  else:
+    try:
+      accumulator = await anext(iterator)
+    except StopAsyncIteration as e:
+      raise TypeError("Cannot reduce empty sequence with no initial value") from e
+
+    accumulator = cast(S, accumulator)
+
+  async for item in iterator:
+    accumulator = function(accumulator, item)
+
+  return accumulator
+
+
+# Not sure as there is no synchronous counterpart
+async def reversed[T](iterator: AsyncIterator[T], /) -> AsyncIterator[T]:
+  """
+  Create an async iterator that yields the items from the given async iterator
+  in reverse order.
+
+  If the async iterator has an `__areversed__` method, it is used to create the
+  reversed iterator. Otherwise, all items are collected into memory before being
+  yielded in reverse order.
+
+  Parameters
+  ----------
+  iterator
+    The async iterator to reverse.
+
+  Returns
+  -------
+  AsyncIterator[T]
+    An async iterator yielding the items in reverse order.
+  """
+
+  areversed = getattr(iterator, "__areversed__", None)
+
+  if areversed is not None:
+    async for item in areversed():
+      yield item
+
+  for item in reversed(await collect(iterator)):
+    yield item
+
+
 __all__ = [
   'buffer_aiter',
   'collect',
   'ensure_aiter',
+  'reduce',
 ]

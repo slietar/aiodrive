@@ -14,7 +14,8 @@ async def checkpoint():
 
   ensure_correct_cancellation()
 
-async def forced_checkpoint():
+
+async def suspend():
   """
   Wait for the next iteration of the event loop.
   """
@@ -28,5 +29,5 @@ async def forced_checkpoint():
 
 __all__ = [
   'checkpoint',
-  'forced_checkpoint',
+  'suspend',
 ]

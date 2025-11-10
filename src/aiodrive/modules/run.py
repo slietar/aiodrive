@@ -1,10 +1,11 @@
 import asyncio
-from asyncio import AbstractEventLoop
+import asyncio.runners
+from asyncio import AbstractEventLoop, BaseEventLoop
 from collections.abc import Awaitable
 from typing import Optional
 
 
-def arun[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop]):
+def run[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = None):
   """
   Run an awaitable in an event loop while enforcing structured concurrency.
 
@@ -16,7 +17,8 @@ def arun[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop]):
   awaitable
     The awaitable to run.
   loop
-    The event loop to use. Defaults to a new event loop.
+    The event loop to use. It is closed before returning. Defaults to a new
+    event loop.
 
   Returns
   -------
@@ -30,23 +32,37 @@ def arun[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop]):
     shutdown.
   """
 
-  effective_loop = loop if loop is not None else asyncio.new_event_loop()
+  if loop is not None:
+    assert not loop.is_closed()
+    assert not loop.is_running()
+
+    effective_loop = loop
+  else:
+    effective_loop = asyncio.new_event_loop()
 
   try:
-    return effective_loop.run_until_complete(awaitable)
+    try:
+      return effective_loop.run_until_complete(awaitable)
+    finally:
+      effective_loop.run_until_complete(effective_loop.shutdown_default_executor())
+
+      if isinstance(effective_loop, BaseEventLoop) and effective_loop._asyncgens: # type: ignore
+          # This does not raise but prints exceptions that occur during shutdown
+          effective_loop.run_until_complete(effective_loop.shutdown_asyncgens())
+          asyncio.runners._cancel_all_tasks(effective_loop) # type: ignore
+
+          # raise RuntimeError('Unclosed async generators at event loop shutdown')
+
+      if asyncio.all_tasks(effective_loop):
+        # Same here
+        asyncio.runners._cancel_all_tasks(effective_loop) # type: ignore
+
+        # raise RuntimeError('Unfinished tasks at event loop shutdown')
+
   finally:
-    effective_loop.run_until_complete(effective_loop.shutdown_default_executor())
-
-    if isinstance(effective_loop, asyncio.BaseEventLoop):
-      if effective_loop._asyncgens: # type: ignore
-        raise RuntimeError('Unclosed async generators at event loop shutdown')
-
-    if asyncio.all_tasks(effective_loop):
-      raise RuntimeError('Unfinished tasks at event loop shutdown')
-
     effective_loop.close()
 
 
 __all__ = [
-  'arun',
+  'run',
 ]

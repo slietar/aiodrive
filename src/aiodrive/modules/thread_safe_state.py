@@ -32,9 +32,7 @@ class ThreadsafeState[T]:
 
         self._condition.notify_all()
 
-        # Using a copy because futures may be removed (but not added) while
-        # iterating
-        for future in self._futures.copy().values():
+        for future in self._futures.values():
           try:
             future.get_loop().call_soon_threadsafe(future.set_result, None)
           except RuntimeError:
@@ -55,7 +53,7 @@ class ThreadsafeState[T]:
     """
 
     if asyncio.get_running_loop() is not None:
-      raise RuntimeError("Cannot call sync wait() from async context")
+      raise RuntimeError("Cannot call sync wait() from a running event loop")
 
     old_value = self.value
 
@@ -78,7 +76,7 @@ class ThreadsafeState[T]:
     Returns
     -------
     T
-      The new state value, guaranteed to be different from the initial one.
+      The state value on which `fn` returned `True`.
     """
 
     return self._observe(fn)
@@ -99,12 +97,7 @@ class ThreadsafeState[T]:
           future = Future[None]()
           self._futures[loop] = future
 
-      try:
-        await asyncio.shield(future)
-      finally:
-        # This is atomic
-        # self._futures.pop(loop, None)
-        pass
+      await asyncio.shield(future)
 
 
 __all__ = [

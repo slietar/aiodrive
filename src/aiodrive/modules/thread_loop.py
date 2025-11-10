@@ -6,13 +6,8 @@ from typing import Literal, Optional
 
 from .contextualize import contextualize
 from .future_state import FutureState
-from .run import run
-from .shield import shield
 from .thread_safe_state import ThreadsafeState
 
-
-# TODO: Fix event loop leakage
-# TODO: Test sys.exit()
 
 async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
     """
@@ -33,7 +28,6 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
         returned value must be awaited.
     """
 
-    loop = asyncio.new_event_loop()
     result: Optional[FutureState[T]] = None
     stage = ThreadsafeState[Literal["join", "preparing", "running"]]("preparing")
     task: Optional[asyncio.Task[T]] = None
@@ -41,11 +35,13 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
     def thread_main():
         nonlocal result, stage
 
-        result = FutureState.absorb_lambda(run, thread_main_async(), loop=loop)
+        result = FutureState.absorb_lambda(asyncio.run, thread_main_async())
         stage.set_value("join")
 
     async def thread_main_async():
         nonlocal stage, task
+
+        loop = asyncio.get_running_loop()
 
         task = asyncio.ensure_future(target)
         loop.call_soon(stage.set_value, "running")
@@ -55,43 +51,60 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
     thread = Thread(target=thread_main)
     thread.start()
 
-    async def wait():
+
+    # Wait for the task to start
+
+    cancelled = False
+
+    while True:
         try:
-            await stage.wait_until(lambda value: value == "join")
-        finally:
-            assert task is not None
+            # Wait no matter what for the task to at least start
+            await asyncio.shield(stage.wait_until(lambda value: value != "preparing"))
+        except asyncio.CancelledError:
+            cancelled = True
+        else:
+            break
 
-            if stage.value == "running":
-                try:
-                    loop.call_soon_threadsafe(task.cancel)
-                except RuntimeError:
-                    # Handle a very unlikely race condition where the thread has
-                    # just exited and the thread loop is closed
-                    pass
-
-                await stage.wait_until(lambda value: value == "join")
-
-            thread.join()
-
-            # This should be safe given that the thread has exited
-            # It allows the exception to have a proper traceback
-            # result = await thread_task
-
-        # assert result is not None
-
-    try:
-        await shield(stage.wait_until(lambda value: value != "preparing"))
-    except asyncio.CancelledError:
+    if cancelled:
         assert task is not None
-        loop.call_soon_threadsafe(task.cancel)
 
-        raise
+        try:
+            task.get_loop().call_soon_threadsafe(task.cancel)
+        except RuntimeError:
+            pass
+
+
+    # Wait for the task to finish
 
     async def finish():
-        await wait()
+        nonlocal cancelled
+
+        assert task is not None
+
+        while True:
+            try:
+                await stage.wait_until(lambda value: value == "join")
+            except asyncio.CancelledError as e:
+                cancelled = e
+
+                # Attempt to cancel the task
+                try:
+                    task.get_loop().call_soon_threadsafe(task.cancel)
+                except RuntimeError:
+                    pass
+            else:
+                break
+
+        thread.join()
 
         assert result is not None
-        return result.apply()
+        value = result.apply()
+
+        # In case the task suppressed the CancelledError
+        if cancelled:
+            raise asyncio.CancelledError
+
+        return value
 
     return finish()
 
@@ -148,42 +161,3 @@ __all__ = [
     'run_in_thread_loop',
     'run_in_thread_loop_contextualized',
 ]
-
-
-
-if __name__ == "__main__":
-    import sys
-    import time
-    import warnings
-
-    warnings.resetwarnings()
-
-    async def a():
-        # time.sleep(1)
-        # sys.exit(1)
-        # raise SystemExit(2)
-        # raise BaseException("Test exception")
-        await asyncio.sleep(1)
-
-    async def main():
-        await run_in_thread_loop(a())
-        # # task = asyncio.create_task(a())
-        # print("Created task")
-
-        # try:
-        #     await asyncio.sleep(1)
-        # finally:
-        #     await task
-
-
-    # import asyncio
-    # asyncio.run(main())
-    asyncio.run(main())
-
-
-    # try:
-    #     raise Exception("Test exception")
-    # except:
-    #     pass
-    # finally:
-    #     print(">>", repr(sys.exception()))

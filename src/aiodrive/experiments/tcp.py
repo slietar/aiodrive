@@ -1,14 +1,13 @@
 import asyncio
-import contextlib
-import os
-import signal
-from asyncio import StreamReader, StreamWriter, TaskGroup
-from collections.abc import Awaitable, Callable, Sequence
+from asyncio import StreamReader, StreamWriter
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional, override
 
-from ..modules.signals import SignalHandledException, handle_signal
+from ..modules.shield import shield
+from ..modules.task_group import eager_task_group
+from .handle import using_pending_handle
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,11 +47,16 @@ class Connection:
 
 @dataclass(slots=True)
 class TCPServer:
-  bindings: frozenset[SockName]
+  bindings: Iterable[SockName]
 
-  @classmethod
-  @contextlib.asynccontextmanager
-  async def listen(cls, handler: Callable[[Connection], Awaitable[None]], host: Sequence[str] | str, *, port: Optional[int] = None):
+  @staticmethod
+  @using_pending_handle
+  async def listen(
+    handler: Callable[[Connection], Awaitable[None]],
+    host: Sequence[str] | str,
+    *,
+    port: Optional[int] = None,
+  ):
     """
     Create a TCP server.
 
@@ -64,16 +68,18 @@ class TCPServer:
     host
       The host or hosts to bind to.
     port
-      The port to bind to.
+      The port to bind to. Defaults to delegating allocation to the operating
+      system.
 
     Returns
     -------
     AbstractAsyncContextManager[TCPServer]
       An async context manager that yields the created TCP server. The server is
-      closed when the context manager exits. This is done in three steps: (1)
-      the server stops accepting new connections (2) existing connections
-      handlers are cancelled, leading to the closure of their connections (3)
-      the server is closed.
+      closed when the context manager exits. This is done in two steps:
+
+      1. The server stops accepting new connections.
+      1. Existing connection handlers are cancelled, leading to the closure of
+         their connections once they return.
     """
 
     def handle_connection_sync(reader: StreamReader, writer: StreamWriter):
@@ -89,49 +95,24 @@ class TCPServer:
         ))
       finally:
         writer.close()
-        await writer.wait_closed()
+        await shield(writer.wait_closed())
 
     server = await asyncio.start_server(handle_connection_sync, host, port)
 
-    bindings = frozenset({
-      SockName.parse(sock.getsockname()) for sock in server.sockets
-    })
-
     try:
-      async with TaskGroup() as group:
+      async with eager_task_group() as group:
         try:
-          yield cls(bindings)
+          yield TCPServer(
+            bindings=[SockName.parse(sock.getsockname()) for sock in server.sockets],
+          )
         finally:
           server.close()
     finally:
       await server.wait_closed()
 
 
-# ----
-
-
-async def main():
-  print(os.getpid())
-
-  try:
-    with handle_signal(signal.SIGINT):
-      async def handler(conn: Connection):
-        print('New connection from', conn.client_name)
-
-        try:
-          while await conn.reader.read(1024):
-            print('Waiting for data...')
-        finally:
-          print('Exiting')
-        # await asyncio.sleep(5)
-
-      async with TCPServer.listen(handler, 'localhost', port=8995) as server:
-        for binding in server.bindings:
-          print('Listening on', binding)
-
-        await asyncio.Future()
-
-  except* SignalHandledException:
-    print('Shutting down gracefully...')
-
-asyncio.run(main())
+__all__ = [
+  'Connection',
+  'SockName',
+  'TCPServer',
+]

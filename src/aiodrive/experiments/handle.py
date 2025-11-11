@@ -1,7 +1,7 @@
 import asyncio
 import functools
-from asyncio import Task
-from collections.abc import AsyncIterator, Awaitable, Callable
+from asyncio import Future, Task
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Never, Optional
@@ -21,10 +21,11 @@ class DaemonHandle:
 
   1. By awaiting the instance and employing an external cancellation mechanism.
   1. By using the instance as asynchronous context manager, where the task is
-     cancelled when exiting.
+     cancelled when exiting. The current task is cancelled if an exception is
+     raised by the handled task.
   1. By calling the `.aclose()` method, which cancels and then awaits the task.
      This can be delegated to the `contextlib.aclosing()` function to attach the
-     task to a context manager. If using the option, the current task is not
+     task to a context manager. If using this option, the current task is not
      cancelled if an exception is raised by the handled task.
   """
 
@@ -51,7 +52,15 @@ class DaemonHandle:
 
 
 @dataclass(slots=True)
-class PendingHandle[T]:
+class PendingDaemonHandle[T]:
+  """
+  A class that manages the initialization, awaiting and cancellation of a daemon
+  awaitable.
+
+  This class handles an awaitable that first yields an intermediate value and
+  then behaves like a daemon awaitable.
+  """
+
   _awaitable: Awaitable[tuple[T, Awaitable[Never]]] = field(repr=False)
   _contextualized: Optional[AbstractAsyncContextManager[None]] = field(default=None, init=False, repr=False)
 
@@ -73,14 +82,18 @@ class PendingHandle[T]:
     return await self._contextualized.__aexit__(exc_type, exc_value, traceback)
 
 
-def using_pending_handle[**P, T](func: Callable[P, AsyncIterator[T]], /):
+def using_pending_daemon_handle[**P, T](func: Callable[P, AsyncGenerator[T]], /):
+  """
+  Decorate the provided function such that it returns a `PendingDaemonHandle`.
+  """
+
   @functools.wraps(func)
   def new_func(*args: P.args, **kwargs: P.kwargs):
-    iterator = aiter(func(*args, **kwargs))
+    generator = func(*args, **kwargs)
 
     async def first_call():
       try:
-        value = await anext(iterator)
+        value = await anext(generator)
       except StopAsyncIteration:
         raise RuntimeError('Generator should yield')
 
@@ -88,34 +101,30 @@ def using_pending_handle[**P, T](func: Callable[P, AsyncIterator[T]], /):
 
     async def second_call():
       try:
-        await anext(iterator)
-      except StopAsyncIteration:
-        raise RuntimeError('Generator should not return')
-      else:
-        raise RuntimeError('Generator should not yield')
+        await Future()
+      except asyncio.CancelledError:
+        try:
+          await anext(generator)
+        except StopAsyncIteration:
+          pass
+        else:
+          try:
+              raise RuntimeError('Generator did not stop')
+          finally:
+              await generator.aclose()
 
-    return PendingHandle(first_call())
+        raise
+
+      # For the type checker
+      raise RuntimeError('Unreachable')
+
+    return PendingDaemonHandle(first_call())
 
   return new_func
 
 
-async def main():
-  @using_pending_handle
-  async def a():
-    yield 24
-
-    try:
-      await asyncio.Future()
-    finally:
-      print("Cleaning up")
-
-  x = a()
-
-  async with x as y:
-    print("Handle is running", y)
-    await asyncio.sleep(.5)
-
-  print("Done")
-
-
-asyncio.run(main())
+__all__ = [
+  'DaemonHandle',
+  'PendingDaemonHandle',
+  'using_pending_daemon_handle',
+]

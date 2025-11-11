@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional, override
 
-from ..modules.shield import shield
-from ..modules.task_group import eager_task_group
-from .handle import using_pending_handle
+from .handle import using_pending_daemon_handle
+from .shield import shield
+from .task_group import eager_task_group
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +50,7 @@ class TCPServer:
   bindings: Iterable[SockName]
 
   @staticmethod
-  @using_pending_handle
+  @using_pending_daemon_handle
   async def listen(
     handler: Callable[[Connection], Awaitable[None]],
     host: Sequence[str] | str,

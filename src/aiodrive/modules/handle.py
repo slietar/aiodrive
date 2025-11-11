@@ -6,9 +6,9 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Never, Optional
 
-from ..modules.cancel import cancel_task
-from ..modules.contextualize import contextualize
-from ..modules.daemon import ensure_daemon
+from .cancel import cancel_task
+from .contextualize import contextualize
+from .daemon import ensure_daemon
 
 
 @dataclass(init=False, slots=True)

@@ -31,7 +31,6 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`run()`**<br>Run an awaitable in a new event loop while enforcing structured concurrency.
 - **`buffer_aiter()`**<br>Pre-fetch items of an async iterable.
 - **`cancel_task()`**<br>Cancel a task and await it.
-- **`cleanup_shield()`**<br>Shield a task against cancellation if it has not been cancelled yet, and await it.
 - **`collect()`**<br>Collect items of an async iterable into a list.
 - **`concurrent_contexts()`**<br>Run multiple context managers concurrently.
 - **`contextualize()`**<br>Run an awaitable as a context manager, ensuring that its task is cancelled when the context manager exits.
@@ -74,3 +73,4 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - Only a single call to an async iterator's `__anext__()` method is ever pending at a time. The same is expected from consumers of a returned async iterator.
 - Unless stated otherwise, functions and classes may not be used across multiple event loops.
 - All functions and classes support using an eager task factory.
+- All functions and classes support at least one cancellation. Some functions and classes support an arbitrary number of cancellations.

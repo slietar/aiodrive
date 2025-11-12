@@ -2,34 +2,17 @@ import asyncio
 from collections.abc import Awaitable
 
 
-async def shield[T](awaitable: Awaitable[T], /) -> T:
+async def shield[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
   """
-  Shield and then await the provided awaitable.
+  Shield and then await the provided awaitable, taking into account existing
+  cancellation requests.
 
   Parameters
   ----------
   awaitable
     The awaitable to shield and await.
-
-  Returns
-  -------
-  T
-    The awaitable's result.
-  """
-
-  task = asyncio.ensure_future(awaitable)
-
-  try:
-    return await asyncio.shield(task)
-  except asyncio.CancelledError:
-    await task
-    raise
-
-
-async def cleanup_shield[T](awaitable: Awaitable[T], /) -> T:
-  """
-  Await the provided awaitable, shielding it if the current task has not been
-  already cancelled.
+  shield_count
+    The number of times to shield the awaitable.
 
   Returns
   -------
@@ -40,13 +23,23 @@ async def cleanup_shield[T](awaitable: Awaitable[T], /) -> T:
   current_task = asyncio.current_task()
   assert current_task is not None
 
-  if current_task.cancelling() > 0:
+  rel_shield_count = shield_count - current_task.cancelling()
+
+  if rel_shield_count <= 0:
     return await awaitable
 
-  return await shield(awaitable)
+  task = asyncio.ensure_future(awaitable)
+
+  for _ in range(rel_shield_count):
+    try:
+      return await asyncio.shield(task)
+    except asyncio.CancelledError:
+      await task
+      raise
+
+  return await task
 
 
 __all__ = [
-  'cleanup_shield',
   'shield',
 ]

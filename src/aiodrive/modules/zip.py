@@ -1,7 +1,7 @@
 import inspect
 from collections.abc import AsyncIterable
 
-from .shield import cleanup_shield
+from .shield import shield
 from .wait import try_all, wait_all
 
 
@@ -41,7 +41,7 @@ async def zip_concurrently[T](*iterables: AsyncIterable[T]) -> AsyncIterable[tup
 
       yield tuple(items)
   finally:
-    await cleanup_shield(wait_all(iterator.aclose() for iterator in iterators if inspect.isasyncgen(iterator)))
+    await shield(wait_all(iterator.aclose() for iterator in iterators if inspect.isasyncgen(iterator)))
 
 
 __all__ = [

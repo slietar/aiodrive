@@ -4,7 +4,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(slots=True)
 class NestableLock:
     """
     A lock that can be acquired multiple times as long as the `contextvars`

@@ -7,6 +7,10 @@ from typing import Optional
 
 @dataclass(slots=True)
 class Scope:
+  """
+  A class that manages the cancellation of a task within a context.
+  """
+
   cancellation_count: int = field(default=0, init=False)
   task: Optional[Task] = field(repr=False)
 
@@ -33,6 +37,10 @@ class Scope:
 def use_scope():
   """
   Create a context that locally manages the cancellation of the current task.
+
+  Returns
+  -------
+  AbstractContextManager[Scope]
   """
 
   task = asyncio.current_task()

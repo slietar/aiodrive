@@ -14,9 +14,9 @@ async def repeat_periodically(min_interval: float, /) -> AsyncIterable[None]:
     min_interval
         The minimum interval between yields, in seconds.
 
-    Yields
-    ------
-    None
+    Returns
+    -------
+    AsyncIterable[None]
     """
 
     while True:

@@ -24,6 +24,11 @@ async def contextualize(awaitable: Awaitable[None], /):
     The awaitable to run in the background. If the returned context manager is
     entered, it is awaited exactly once, and it is otherwise awaited at most
     once.
+
+  Returns
+  -------
+  AbstractAsyncContextManager[None]
+    An async context manager that runs the given awaitable in the background.
   """
 
   background_task = GuaranteedTask(awaitable)

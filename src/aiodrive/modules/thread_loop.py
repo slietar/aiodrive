@@ -145,7 +145,7 @@ async def run_in_thread_loop_contextualized(target: Awaitable[None], /) -> Async
 
     Returns
     -------
-    AsyncContextManager[None]
+    AbstractAsyncContextManager[None]
         An async context manager which runs the provided awaitable in a separate
         thread.
     """

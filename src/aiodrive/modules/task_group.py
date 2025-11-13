@@ -12,6 +12,10 @@ class TaskGroupTerminatedException(Exception):
 async def eager_task_group() -> AsyncIterator[TaskGroup]:
   """
   Create a `TaskGroup` that automatically terminates when the context is exited.
+
+  Returns
+  -------
+  AbstractAsyncContextManager[TaskGroup]
   """
 
   with suppress(TaskGroupTerminatedException):

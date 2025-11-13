@@ -1,22 +1,51 @@
-import inspect
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, AsyncIterator
+from typing import overload
 
-from .shield import ShieldContext
-from .wait import try_all, wait_all
+from .wait import wait_all
 
 
 # No strict option because that would cause delays
 
-async def zip_concurrently[T](*iterables: AsyncIterable[T]) -> AsyncIterable[tuple[T, ...]]:
+@overload
+def zip_concurrently() -> AsyncIterator[tuple[()]]:
+  ...
+
+@overload
+def zip_concurrently[T1](
+  iterable1: AsyncIterable[T1],
+  /,
+) -> AsyncIterator[tuple[T1]]:
+  ...
+
+@overload
+def zip_concurrently[T1, T2](
+  iterable1: AsyncIterable[T1],
+  iterable2: AsyncIterable[T2],
+  /,
+) -> AsyncIterator[tuple[T1, T2]]:
+  ...
+
+@overload
+def zip_concurrently[T1, T2, T3](
+  iterable1: AsyncIterable[T1],
+  iterable2: AsyncIterable[T2],
+  iterable3: AsyncIterable[T3],
+  /,
+) -> AsyncIterator[tuple[T1, T2, T3]]:
+  ...
+
+@overload
+def zip_concurrently[T](*iterables: AsyncIterable[T]) -> AsyncIterator[tuple[T, ...]]:
+  ...
+
+async def zip_concurrently(*iterables: AsyncIterable) -> AsyncIterator[tuple]:
   """
   Zip multiple async iterables together, yielding tuples of items from each
   iterable.
 
   If one of the iterators raises an exception or is exhausted, all remaining
-  queries to iterators are cancelled, and then all generator iterators are
-  closed. Items obtained from completed queries are discarded. If an exception
-  is raised while closing a generator, it does not cause the cancellation of the
-  closure of other generators.
+  queries to iterators are cancelled. Items obtained from completed queries are
+  discarded.
 
   Parameters
   ----------
@@ -25,23 +54,19 @@ async def zip_concurrently[T](*iterables: AsyncIterable[T]) -> AsyncIterable[tup
 
   Yields
   ------
-  tuple
+  tuple[T, ...]
     Tuples of items from each iterable.
   """
 
-  context = ShieldContext()
   iterators = [aiter(iterable) for iterable in iterables]
 
-  try:
-    while True:
-      try:
-        items = await try_all(anext(iterator) for iterator in iterators)
-      except* StopAsyncIteration as e:
-        raise StopAsyncIteration from e # Mmmmh not sure
+  while True:
+    try:
+      items = await wait_all(anext(iterator) for iterator in iterators)
+    except* StopAsyncIteration as e:
+      raise StopAsyncIteration from e # Mmmmh not sure
 
-      yield tuple(items)
-  finally:
-    await context.shield(wait_all(iterator.aclose() for iterator in iterators if inspect.isasyncgen(iterator)))
+    yield tuple(items)
 
 
 __all__ = [

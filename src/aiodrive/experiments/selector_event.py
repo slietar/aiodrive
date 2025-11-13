@@ -1,22 +1,29 @@
 import asyncio
-from collections import namedtuple
 import contextlib
+import logging
 import os
 import select
-from collections.abc import Callable, Container, Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
-from typing import IO, Literal, Optional
+from typing import Literal, Optional
 
 
-# Only works on macOS - Linux uses inotify
-# This is a _bridge_ implementation for kqueue-based file watching
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
-class EventManager:
+class _KqueueEventManager:
     update: Callable[[Iterable[select.kevent]], None]
+    """
+    Update kqueue event registrations.
+
+    Parameters
+    ----------
+    events
+        An iterable of kqueue events to register.
+    """
 
 
 @contextlib.asynccontextmanager
@@ -24,6 +31,21 @@ async def KqueueEventManager(
     callback: Callable[[select.kevent], None],
     /,
 ):
+    """
+    Create a context manager for receiving kqueue events.
+
+    Parameters
+    ----------
+    callback
+        A callback that is called when a kqueue event is received.
+
+    Returns
+    -------
+    AbstractAsyncContextManager[_KqueueEventManager]
+        A context manager that provides an update function to register kqueue
+        event registrations.
+    """
+
     kq = select.kqueue()
     kq_fd = kq.fileno()
 
@@ -38,8 +60,7 @@ async def KqueueEventManager(
     loop.add_reader(kq_fd, internal_callback)
 
     try:
-        yield EventManager(update)
-
+        yield _KqueueEventManager(update)
     finally:
         loop.remove_reader(kq_fd)
         kq.close()
@@ -56,7 +77,24 @@ async def watch_path(
     callback: Callable[[Literal['create', 'delete', 'write']], None],
     /,
 ):
-    # TODO: Docs + error handling + __all__
+    """
+    Watch a single path.
+
+    This function is only supported if kqueue is available.
+
+    Parameters
+    ----------
+    raw_path
+        The path to watch. Can be a file or directory.
+    callback
+        A callback that is called when the watched path is created, deleted,
+        points to a file that has been written to, or points to a directory
+        whose child list was modified.
+
+    Returns
+    -------
+    AbstractAsyncContextManager[None]
+    """
 
     target_path = Path(raw_path).resolve()
     watched: Optional[WatchedInfo] = None
@@ -65,24 +103,22 @@ async def watch_path(
         nonlocal watched
         assert watched is not None
 
-        watching_directory = watched.path != target_path
-
-        if (event.fflags & select.KQ_NOTE_WRITE) > 0:
-            if watching_directory:
-                # The target file was potentially added to the watched directory
-                update_up(watched.path)
-            else:
-                callback('write')
+        watching_ancestor = watched.path != target_path
 
         if (event.fflags & (select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME)) > 0:
-            if watching_directory:
+            if watching_ancestor:
                 # The watched directory was deleted or renamed
                 pass
             else:
                 callback('delete')
 
             update_down(watched.path)
-
+        elif (event.fflags & select.KQ_NOTE_WRITE) > 0:
+            if watching_ancestor:
+                # The target file was potentially added to the watched directory
+                update_up(watched.path)
+            else:
+                callback('write')
 
     def try_open(path: Path, /):
         try:
@@ -99,7 +135,7 @@ async def watch_path(
         while (fd := try_open(current_path)) is None:
             current_path = current_path.parent
 
-        update(fd, current_path)
+        update_watch(fd, current_path)
 
     def update_up(guess_path_exclusive: Path, /):
         current_fd: Optional[int] = None
@@ -110,6 +146,7 @@ async def watch_path(
             fd = try_open(current_path)
 
             if fd is None:
+                current_path = current_path.parent
                 break
 
             if current_fd is not None:
@@ -118,9 +155,12 @@ async def watch_path(
             current_fd = fd
 
         if current_fd is not None:
-            update(current_fd, current_path)
+            update_watch(current_fd, current_path)
 
-    def update(fd: int, path: Path, /):
+        # If no ancestor or target was added to the currently-watched directory,
+        # 'current_fd' is None and there is nothing to change.
+
+    def update_watch(fd: int, path: Path, /):
         nonlocal watched
 
         if (watched is not None) and (watched.path == path):
@@ -130,7 +170,7 @@ async def watch_path(
             os.close(watched.fd)
 
         watched = WatchedInfo(fd=fd, path=path)
-        print(f'Watching: {watched.path}')
+        logger.debug(f'Watching {watched.path}')
 
         manager.update([
             select.kevent(
@@ -155,8 +195,11 @@ async def watch_path(
             os.close(watched.fd)
 
 
-async def main():
-    async with watch_path('w/test1.txt', print):
-        await asyncio.Future()
+if __name__ == "__main__":
+    async def main():
+        logging.basicConfig(level=logging.DEBUG)
 
-asyncio.run(main())
+        async with watch_path('playground/a/b/c', print):
+            await asyncio.Future()
+
+    asyncio.run(main())

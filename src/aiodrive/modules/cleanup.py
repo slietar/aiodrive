@@ -6,6 +6,23 @@ from .shield import ShieldContext
 
 @contextlib.asynccontextmanager
 async def cleaned_up(callback: Callable[[], Awaitable[None]], /):
+  """
+  Create a context manager that calls the given async callback when exiting the
+  context.
+
+  The callback is shielded from exactly one cancellation with respect to when
+  the context was entered.
+
+  Parameters
+  ----------
+  callback
+    An async function to be called when exiting the context.
+
+  Returns
+  -------
+  AbstractAsyncContextManager[None]
+  """
+
   context = ShieldContext()
 
   try:
@@ -14,20 +31,6 @@ async def cleaned_up(callback: Callable[[], Awaitable[None]], /):
     await context.shield(callback())
 
 
-if __name__ == "__main__":
-  import asyncio
-
-  async def run_cleanup():
-    print("Cleaning up...")
-    await asyncio.sleep(1)
-    print("Cleanup done.")
-
-  async def main():
-    async with cleaned_up(run_cleanup):
-      print("Doing work...")
-      await asyncio.sleep(1)
-
-  try:
-    asyncio.run(main())
-  except KeyboardInterrupt:
-    print("Cancelled by user")
+__all__ = [
+  'cleaned_up',
+]

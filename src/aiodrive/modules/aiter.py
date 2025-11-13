@@ -139,37 +139,6 @@ async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T]
   return accumulator
 
 
-# Not sure as there is no synchronous counterpart
-async def reversed[T](iterator: AsyncIterator[T], /) -> AsyncIterator[T]:
-  """
-  Create an async iterator that yields the items from the given async iterator
-  in reverse order.
-
-  If the async iterator has an `__areversed__` method, it is used to create the
-  reversed iterator. Otherwise, all items are collected into memory before being
-  yielded in reverse order.
-
-  Parameters
-  ----------
-  iterator
-    The async iterator to reverse.
-
-  Returns
-  -------
-  AsyncIterator[T]
-    An async iterator yielding the items in reverse order.
-  """
-
-  areversed = getattr(iterator, "__areversed__", None)
-
-  if areversed is not None:
-    async for item in areversed():
-      yield item
-
-  for item in reversed(await collect(iterator)):
-    yield item
-
-
 __all__ = [
   'buffer_aiter',
   'collect',

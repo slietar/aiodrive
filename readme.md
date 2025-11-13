@@ -25,7 +25,6 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`GuaranteedTask`**<br>A variant of `asyncio.Task` that is guaranteed to be awaited before any cancellation can happen.
 - **`Latch`**<br>A primitive similar to `asyncio.Event` but that can be awaited for both set and reset occurences.
 - **`NestableLock`**<br>A lock that can be held simultaneously by different callers in the same context.
-- **`ThreadsafeButton`**<br>A thread-safe variant of `Button`.
 - **`ThreadsafeState`**<br>A thread-safe primitive for storing and watching a state.
 - **`ThreadsafeLock`**<br>A lock that can be acquired from different threads.
 - **`run()`**<br>Run an awaitable in a new event loop while enforcing structured concurrency.

@@ -5,7 +5,6 @@ from .shield import shield
 from .wait import try_all, wait_all
 
 
-# Unlike input iterables, does not support parallel calls to __anext__
 # No strict option because that would cause delays
 
 async def zip_concurrently[T](*iterables: AsyncIterable[T]) -> AsyncIterable[tuple[T, ...]]:

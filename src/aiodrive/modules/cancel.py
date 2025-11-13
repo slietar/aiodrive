@@ -29,18 +29,6 @@ async def cancel_task(task: Task[object], /):
         raise
 
 
-def ensure_correct_cancellation():
-  """
-  Raise a `CancelledError` if the current task was cancelled.
-  """
-
-  current_task = asyncio.current_task()
-  assert current_task is not None
-
-  if current_task.cancelling() > 0:
-    raise asyncio.CancelledError
-
-
 class SuppressFailureError(RuntimeError):
   pass
 
@@ -67,6 +55,16 @@ def suppress(*exceptions: type[BaseException], strict: bool = False):
   """
 
   try:
+    current_task = asyncio.current_task()
+  except RuntimeError:
+      cancellation_count = None
+  else:
+    if current_task is not None:
+      cancellation_count = current_task.cancelling()
+    else:
+      cancellation_count = None
+
+  try:
     yield
   except* exceptions:
     pass
@@ -74,18 +72,36 @@ def suppress(*exceptions: type[BaseException], strict: bool = False):
     if strict:
       raise SuppressFailureError('No exception to suppress')
 
-  try:
+  if cancellation_count is not None:
     current_task = asyncio.current_task()
-  except RuntimeError:
-    pass
-  else:
-    if current_task is not None:
-      ensure_correct_cancellation()
+    assert current_task is not None
+
+    if current_task.cancelling() > cancellation_count:
+      raise asyncio.CancelledError
 
 
 __all__ = [
   'SuppressFailureError',
   'cancel_task',
-  'ensure_correct_cancellation',
   'suppress',
 ]
+
+
+async def main():
+  try:
+    await asyncio.sleep(10)
+  except asyncio.CancelledError:
+    with suppress(RuntimeError):
+      raise RuntimeError("An error occurred")
+
+    print("Ok")
+    raise
+
+
+if __name__ == "__main__":
+  import asyncio
+
+  try:
+    asyncio.run(main())
+  except KeyboardInterrupt:
+    print("Cancelled by user")

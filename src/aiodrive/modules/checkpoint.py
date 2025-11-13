@@ -1,8 +1,6 @@
 import asyncio
 from asyncio import Future
 
-from .cancel import ensure_correct_cancellation
-
 
 async def checkpoint():
   """
@@ -12,7 +10,12 @@ async def checkpoint():
   operation, for example in the case of a KeyboardInterrupt.
   """
 
-  ensure_correct_cancellation()
+  current_task = asyncio.current_task()
+  assert current_task is not None
+
+  if current_task.cancelling() > 0:
+    raise asyncio.CancelledError
+
 
 
 async def suspend():

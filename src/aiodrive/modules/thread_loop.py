@@ -59,7 +59,7 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
     while True:
         try:
             # Wait no matter what for the task to at least start
-            await asyncio.shield(stage.wait_until(lambda value: value != "preparing"))
+            await stage.wait_until(lambda value: value != "preparing")
         except asyncio.CancelledError:
             cancelled = True
         else:
@@ -84,8 +84,8 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
         while True:
             try:
                 await stage.wait_until(lambda value: value == "join")
-            except asyncio.CancelledError as e:
-                cancelled = e
+            except asyncio.CancelledError:
+                cancelled = True
 
                 # Attempt to cancel the task
                 try:

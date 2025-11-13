@@ -40,6 +40,39 @@ async def shield[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
   return await task
 
 
+async def shield_forever[T](awaitable: Awaitable[T], /) -> T:
+  """
+  Shield and then await the provided awaitable forever, ignoring all
+  cancellation requests.
+
+  Parameters
+  ----------
+  awaitable
+    The awaitable to shield and await.
+
+  Returns
+  -------
+  T
+    The awaitable's result.
+  """
+
+  cancelled = False
+  task = asyncio.ensure_future(awaitable)
+
+  while True:
+    try:
+      result = await asyncio.shield(task)
+    except asyncio.CancelledError:
+      cancelled = True
+      continue
+
+    if cancelled:
+      raise asyncio.CancelledError
+
+    return result
+
+
 __all__ = [
   'shield',
+  'shield_forever',
 ]

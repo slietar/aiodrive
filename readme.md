@@ -45,7 +45,6 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - **`run_in_thread_loop()`**<br>Run an awaitable in a separate thread with its own event loop.
 - **`shield()`**<br>Shield a task against cancellation and await it.
 - **`suppress()`**<br>A context manager that suppresses specified exceptions, ensuring that an `asyncio.CancelledError` is re-raised if necessary.
-- **`try_all()`**<br>Run multiple tasks and cancel those still running if one of them raises an exception.
 - **`use_scope()`**<br>Create a context manager that allows for a silent cancellation of the current task.
 - **`wait_all()`**<br>Run multiple tasks without cancelling any if one raises an exception.
 - **`wait_for_signal()`**<br>Wait for a signal.

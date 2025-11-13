@@ -1,10 +1,8 @@
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from typing import overload
 
 from .wait import wait_all
 
-
-# No strict option because that would cause delays
 
 @overload
 def zip_concurrently() -> AsyncIterator[tuple[()]]:
@@ -38,7 +36,11 @@ def zip_concurrently[T1, T2, T3](
 def zip_concurrently[T](*iterables: AsyncIterable[T]) -> AsyncIterator[tuple[T, ...]]:
   ...
 
-async def zip_concurrently(*iterables: AsyncIterable) -> AsyncIterator[tuple]:
+@overload
+def zip_concurrently[T](iterables: Iterable[AsyncIterable[T]], /) -> AsyncIterator[tuple[T, ...]]:
+  ...
+
+async def zip_concurrently(*iterables: AsyncIterable | Iterable[AsyncIterable]) -> AsyncIterator[tuple]:
   """
   Zip multiple async iterables together, yielding tuples of items from each
   iterable.
@@ -54,11 +56,15 @@ async def zip_concurrently(*iterables: AsyncIterable) -> AsyncIterator[tuple]:
 
   Yields
   ------
-  tuple[T, ...]
+  tuple
     Tuples of items from each iterable.
   """
 
-  iterators = [aiter(iterable) for iterable in iterables]
+  if iterables and isinstance(iterables[0], Iterable):
+    assert len(iterables) == 1
+    iterators = [aiter(iterable) for iterable in iterables[0]]
+  else:
+    iterators = [aiter(iterable) for iterable in iterables] # type: ignore
 
   while True:
     try:

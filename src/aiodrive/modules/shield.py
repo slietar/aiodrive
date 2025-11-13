@@ -12,7 +12,8 @@ async def shield[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
   awaitable
     The awaitable to shield and await.
   shield_count
-    The number of times to shield the awaitable.
+    The number of times to shield the awaitable. A negative value is treated as
+    zero.
 
   Returns
   -------
@@ -92,7 +93,8 @@ class ShieldContext:
     awaitable
       The awaitable to shield and await.
     shield_count
-      The number of times to shield the awaitable.
+      The number of times to shield the awaitable. A negative value is treated
+      as zero.
 
     Returns
     -------
@@ -100,21 +102,10 @@ class ShieldContext:
       The awaitable's result.
     """
 
-    rel_shield_count = shield_count - self._initial_cancellation_count
-
-    if rel_shield_count <= 0:
-      return await awaitable
-
-    task = asyncio.ensure_future(awaitable)
-
-    for _ in range(rel_shield_count):
-      try:
-        return await asyncio.shield(task)
-      except asyncio.CancelledError:
-        await task
-        raise
-
-    return await task
+    return await shield(
+      awaitable,
+      shield_count=(shield_count - self._initial_cancellation_count),
+    )
 
 
 __all__ = [

@@ -3,6 +3,7 @@ import contextlib
 import logging
 import os
 import select
+from asyncio import Handle, TimerHandle
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from os import PathLike
@@ -71,11 +72,16 @@ class WatchedInfo:
     fd: int
     path: Path
 
+type WatchPathEvent = Literal['create', 'delete', 'write']
+
 @contextlib.asynccontextmanager
 async def watch_path(
     raw_path: PathLike | str,
-    callback: Callable[[Literal['create', 'delete', 'write']], None],
     /,
+    callback: Callable[[WatchPathEvent], None],
+    *,
+    call_immediately: bool = True,
+    debounce_delay: Optional[float] = None,
 ):
     """
     Watch a single path.
@@ -89,12 +95,67 @@ async def watch_path(
     callback
         A callback that is called when the watched path is created, deleted,
         points to a file that has been written to, or points to a directory
-        whose child list was modified.
+        whose child list was modified. The callback is called on the next
+        iteration of the event loop. Exiting the context manager cancels any
+        pending call.
+    call_immediately
+        Whether to call the callback immediately if the path exists when
+        starting to watch it. The call is performed immediately.
+    debounce_delay
+        The debounce delay in seconds. If `None`, no debouncing is performed.
 
     Returns
     -------
     AbstractAsyncContextManager[None]
     """
+
+    callback_handle: Optional[Handle | TimerHandle] = None
+    last_reported_exists: Optional[bool] = None
+    queued_event: Optional[WatchPathEvent] = None
+
+    loop = asyncio.get_running_loop()
+
+    def eager_callback(event: WatchPathEvent):
+        nonlocal callback_handle, last_reported_exists, queued_event
+        queued_event = event
+
+        if last_reported_exists is None:
+            if call_immediately:
+                last_reported_exists = (event == 'create')
+                callback(event)
+
+            return
+
+        if (not last_reported_exists) and (queued_event == 'delete'):
+            if callback_handle is not None:
+                callback_handle.cancel()
+                callback_handle = None
+
+            return
+
+        if debounce_delay is not None:
+            if callback_handle is not None:
+                callback_handle.cancel()
+
+            callback_handle = loop.call_later(debounce_delay, late_callback)
+        else:
+            callback_handle = loop.call_soon(late_callback)
+
+    def late_callback():
+        nonlocal last_reported_exists
+
+        match (last_reported_exists, queued_event):
+            case (False, 'create' | 'write'):
+                callback('create')
+                last_reported_exists = True
+            case (False, 'delete'):
+                raise RuntimeError('Unreachable')
+            case (True, 'delete'):
+                callback('delete')
+                last_reported_exists = False
+            case (True, 'create' | 'write'):
+                callback('write')
+
 
     target_path = Path(raw_path).resolve()
     watched: Optional[WatchedInfo] = None
@@ -110,7 +171,7 @@ async def watch_path(
                 # The watched directory was deleted or renamed
                 pass
             else:
-                callback('delete')
+                eager_callback('delete')
 
             update_down(watched.path)
         elif (event.fflags & select.KQ_NOTE_WRITE) > 0:
@@ -118,7 +179,7 @@ async def watch_path(
                 # The target file was potentially added to the watched directory
                 update_up(watched.path)
             else:
-                callback('write')
+                eager_callback('write')
 
     def try_open(path: Path, /):
         try:
@@ -182,7 +243,7 @@ async def watch_path(
         ])
 
         if watched.path == target_path:
-            callback('create')
+            eager_callback('create')
         else:
             update_up(watched.path)
 
@@ -191,8 +252,18 @@ async def watch_path(
             update_down(target_path)
             yield
     finally:
+        if callback_handle is not None:
+            callback_handle.cancel()
+
         if watched is not None:
             os.close(watched.fd)
+
+
+__all__ = [
+    'KqueueEventManager',
+    'WatchPathEvent',
+    'watch_path',
+]
 
 
 if __name__ == "__main__":

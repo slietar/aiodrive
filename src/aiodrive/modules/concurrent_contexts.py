@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import AbstractAsyncContextManager
 from typing import overload
 
-from .shield import shield
+from .shield import ShieldContext
 from .wait import try_all, wait_all
 
 
@@ -59,10 +59,12 @@ async def concurrent_contexts(managers: Iterable[AbstractAsyncContextManager], /
         open_managers.append(manager)
         return context_value
 
+    context = ShieldContext()
+
     try:
         yield tuple(await try_all(enter_context(manager) for manager in managers))
     finally:
-        await shield(wait_all(manager.__aexit__(None, None, None) for manager in open_managers))
+        await context.shield(wait_all(manager.__aexit__(None, None, None) for manager in open_managers))
 
 
 __all__ = [

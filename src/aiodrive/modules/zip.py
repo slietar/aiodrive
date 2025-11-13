@@ -1,7 +1,7 @@
 import inspect
 from collections.abc import AsyncIterable
 
-from .shield import shield
+from .shield import ShieldContext
 from .wait import try_all, wait_all
 
 
@@ -29,18 +29,19 @@ async def zip_concurrently[T](*iterables: AsyncIterable[T]) -> AsyncIterable[tup
     Tuples of items from each iterable.
   """
 
-  iterators = [iterable.__aiter__() for iterable in iterables]
+  context = ShieldContext()
+  iterators = [aiter(iterable) for iterable in iterables]
 
   try:
     while True:
       try:
-        items = await try_all(it.__anext__() for it in iterators)
+        items = await try_all(anext(iterator) for iterator in iterators)
       except* StopAsyncIteration as e:
         raise StopAsyncIteration from e # Mmmmh not sure
 
       yield tuple(items)
   finally:
-    await shield(wait_all(iterator.aclose() for iterator in iterators if inspect.isasyncgen(iterator)))
+    await context.shield(wait_all(iterator.aclose() for iterator in iterators if inspect.isasyncgen(iterator)))
 
 
 __all__ = [

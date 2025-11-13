@@ -6,7 +6,7 @@ from ipaddress import IPv4Address, IPv6Address
 from typing import Optional, override
 
 from .handle import using_pending_daemon_handle
-from .shield import shield
+from .shield import ShieldContext
 from .task_group import eager_task_group
 
 
@@ -82,10 +82,14 @@ class TCPServer:
          their connections once they return.
     """
 
+    context = ShieldContext()
+
     def handle_connection_sync(reader: StreamReader, writer: StreamWriter):
       group.create_task(handle_connection_async(reader, writer))
 
     async def handle_connection_async(reader: StreamReader, writer: StreamWriter):
+      context = ShieldContext()
+
       try:
         await handler(Connection(
           SockName.parse(writer.transport.get_extra_info('peername')),
@@ -95,7 +99,7 @@ class TCPServer:
         ))
       finally:
         writer.close()
-        await shield(writer.wait_closed())
+        await context.shield(writer.wait_closed())
 
     server = await asyncio.start_server(handle_connection_sync, host, port)
 
@@ -108,7 +112,7 @@ class TCPServer:
         finally:
           server.close()
     finally:
-      await server.wait_closed()
+      await context.shield(server.wait_closed())
 
 
 __all__ = [

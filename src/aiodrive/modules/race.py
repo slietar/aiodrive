@@ -1,31 +1,49 @@
 import asyncio
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterable
 from typing import Literal, overload
 
+from .wait import wait_all
+
 
 @overload
-async def race[T1](a1: Awaitable[T1], /) -> tuple[Literal[0], T1]:
+async def race[T1](
+  awaitable1: Awaitable[T1],
+  /,
+) -> tuple[Literal[0], T1]:
   ...
 
 @overload
-async def race[T1, T2](a1: Awaitable[T1], a2: Awaitable[T2], /) -> tuple[Literal[0], T1] | tuple[Literal[1], T2]:
+async def race[T1, T2](
+  awaitable1: Awaitable[T1],
+  awaitable2: Awaitable[T2],
+  /,
+) -> tuple[Literal[0], T1] | tuple[Literal[1], T2]:
   ...
 
 @overload
-async def race[T1, T2, T3](a1: Awaitable[T1], a2: Awaitable[T2], a3: Awaitable[T3], /) -> tuple[Literal[0], T1] | tuple[Literal[1], T2] | tuple[Literal[2], T3]:
+async def race[T1, T2, T3](
+  awaitable1: Awaitable[T1],
+  awaitable2: Awaitable[T2],
+  awaitable3: Awaitable[T3],
+  /,
+) -> tuple[Literal[0], T1] | tuple[Literal[1], T2] | tuple[Literal[2], T3]:
   ...
 
 @overload
 async def race[T](*awaitables: Awaitable[T]) -> tuple[int, T]:
   ...
 
-async def race(*awaitables: Awaitable):
+@overload
+async def race[T](awaitables: Iterable[Awaitable[T]], /) -> tuple[int, T]:
+  ...
+
+async def race(*awaitables: Awaitable | Iterable[Awaitable]):
   """
   Wait for the first awaitable to complete, and then cancel the others.
 
   The function returns or raises an exception according to the status of the
-  first task that finishes. All awaitables are cancelled if the call to `race()`
-  itself is cancelled.
+  first task that finishes. All awaitables are cancelled if the call to itself
+  is cancelled.
 
   Parameters
   ----------
@@ -41,26 +59,30 @@ async def race(*awaitables: Awaitable):
 
   assert len(awaitables) >= 1
 
-  tasks = [asyncio.ensure_future(awaitable) for awaitable in awaitables]
+  if awaitables and isinstance(awaitables[0], Iterable):
+    assert len(awaitables) == 1
+    effective_awaitables = awaitables[0]
+  else:
+    effective_awaitables: Iterable[Awaitable] = awaitables # type: ignore
+
+  tasks = [asyncio.ensure_future(awaitable) for awaitable in effective_awaitables]
 
   try:
-    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    done_tasks, pending_tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
   except asyncio.CancelledError:
     for task in tasks:
       task.cancel()
 
-    await asyncio.wait(tasks)
+    await wait_all(tasks)
     raise
 
-  done_task = next(iter(done))
+  winning_task = next(iter(done_tasks))
 
-  for task in pending:
+  for task in pending_tasks:
     task.cancel()
 
-  if pending:
-    await asyncio.wait(pending)
-
-  return tasks.index(done_task), done_task.result()
+  await wait_all(pending_tasks)
+  return tasks.index(winning_task), winning_task.result()
 
 
 __all__ = [

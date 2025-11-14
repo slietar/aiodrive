@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from typing import overload
 
-from .wait import wait_all
+from .wait import wait
 
 
 @overload
@@ -62,13 +62,15 @@ async def zip_concurrently(*iterables: AsyncIterable | Iterable[AsyncIterable]) 
 
   if iterables and isinstance(iterables[0], Iterable):
     assert len(iterables) == 1
-    iterators = [aiter(iterable) for iterable in iterables[0]]
+    effective_iterables = iterables[0]
   else:
-    iterators = [aiter(iterable) for iterable in iterables] # type: ignore
+    effective_iterables: Iterable[AsyncIterable] = iterables # type: ignore
+
+  iterators = [aiter(iterable) for iterable in effective_iterables]
 
   while True:
     try:
-      items = await wait_all(anext(iterator) for iterator in iterators)
+      items = await wait(anext(iterator) for iterator in iterators)
     except* StopAsyncIteration as e:
       raise StopAsyncIteration from e # Mmmmh not sure
 

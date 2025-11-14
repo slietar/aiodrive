@@ -1,10 +1,49 @@
 import asyncio
-from collections.abc import Awaitable, Iterable, Sequence
+from collections.abc import Awaitable, Iterable
+from typing import overload
 
 
-# TODO: Rename wait_concurrently
+@overload
+async def wait[T1](*, sensitive: bool = ...) -> tuple[()]:
+  ...
 
-async def wait_all[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -> Sequence[T]:
+@overload
+async def wait[T1](
+  awaitable1: Awaitable[T1],
+  /, *,
+  sensitive: bool = ...,
+) -> tuple[T1, ...]:
+  ...
+
+@overload
+async def wait[T1, T2](
+  awaitable1: Awaitable[T1],
+  awaitable2: Awaitable[T2],
+  /, *,
+  sensitive: bool = ...,
+) -> tuple[T1, T2]:
+  ...
+
+@overload
+async def wait[T1, T2, T3](
+  awaitable1: Awaitable[T1],
+  awaitable2: Awaitable[T2],
+  awaitable3: Awaitable[T3],
+  /, *,
+  sensitive: bool = ...,
+) -> tuple[T1, T2, T3]:
+  ...
+
+@overload
+async def wait[T](*awaitables: Awaitable[T], sensitive: bool = ...) -> tuple[T, ...]:
+  ...
+
+@overload
+async def wait[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = ...) -> tuple[T, ...]:
+  ...
+
+
+async def wait(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool = True):
   """
   Wait for all provided coroutines or tasks to complete.
 
@@ -29,21 +68,21 @@ async def wait_all[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool 
 
   Returns
   -------
-  Sequence[T]
-    A sequence of results from the provided tasks, in the same order as the
-    provided items.
-
-  Raises
-  ------
-  BaseExceptionGroup
-    If one or more exceptions were raised by the provided tasks.
+  tuple[T, ...]
+    Results from the provided tasks, in the same order as the awaitables.
   """
 
+  if awaitables and isinstance(awaitables[0], Iterable):
+    assert len(awaitables) == 1
+    effective_awaitables = awaitables[0]
+  else:
+    effective_awaitables: Iterable[Awaitable] = awaitables # type: ignore
+
   cancelled = False
-  tasks = [asyncio.ensure_future(awaitable) for awaitable in awaitables]
+  tasks = [asyncio.ensure_future(awaitable) for awaitable in effective_awaitables]
 
   if not tasks:
-    return []
+    return ()
 
   if sensitive:
     try:
@@ -90,11 +129,11 @@ async def wait_all[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool 
   if cancelled or any(task.cancelled() for task in tasks):
     raise asyncio.CancelledError
 
-  return [task.result() for task in tasks]
+  return tuple(task.result() for task in tasks)
 
 
 __all__ = [
-  'wait_all',
+  'wait',
 ]
 
 
@@ -104,13 +143,17 @@ if __name__ == "__main__":
   async def a():
     await asyncio.sleep(1)
     print("A done")
-    raise Exception("Test exception")
+    raise ValueError("Test error in a")
+    return 43
 
   async def main():
-    await wait_all([
+    result = await wait(
       a(),
       asyncio.sleep(2),
-    ], sensitive=False)
+      sensitive=False,
+    )
+
+    print("Results:", result)
 
     # async with asyncio.TaskGroup() as tg:
     #   tg.create_task(a())

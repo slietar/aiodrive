@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Awaitable, Iterable
 from typing import Literal, overload
 
-from .wait import wait_all
+from .wait import wait
 
 
 @overload
@@ -57,14 +57,13 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
     result.
   """
 
-  assert len(awaitables) >= 1
-
   if awaitables and isinstance(awaitables[0], Iterable):
     assert len(awaitables) == 1
-    effective_awaitables = awaitables[0]
+    effective_awaitables = tuple(awaitables[0])
   else:
-    effective_awaitables: Iterable[Awaitable] = awaitables # type: ignore
+    effective_awaitables: tuple[Awaitable, ...] = awaitables # type: ignore
 
+  assert len(effective_awaitables) >= 1
   tasks = [asyncio.ensure_future(awaitable) for awaitable in effective_awaitables]
 
   try:
@@ -73,7 +72,7 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
     for task in tasks:
       task.cancel()
 
-    await wait_all(tasks)
+    await wait(tasks)
     raise
 
   winning_task = next(iter(done_tasks))
@@ -81,7 +80,7 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
   for task in pending_tasks:
     task.cancel()
 
-  await wait_all(pending_tasks)
+  await wait(pending_tasks)
   return tasks.index(winning_task), winning_task.result()
 
 

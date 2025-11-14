@@ -8,6 +8,8 @@ async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = T
   """
   Asynchronously yield results from awaitables as they complete.
 
+  It is crucial to close the generator for internal tasks to be cleaned up.
+
   Parameters
   ----------
   awaitables
@@ -26,7 +28,7 @@ async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = T
   Raises
   ------
   BaseExceptionGroup
-    If at least one awaitable raises an exception.
+    If an awaitable raises an exception.
   """
 
   tasks = [asyncio.ensure_future(awaitable) for awaitable in awaitables]

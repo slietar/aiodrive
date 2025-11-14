@@ -74,6 +74,11 @@ async def concurrent_contexts(*managers: AbstractAsyncContextManager | Iterable[
     AbstractAsyncContextManager[tuple]
         An asynchronous context manager that yields a tuple of the results from
         entering each context manager. The order is maintained.
+
+    Raises
+    ------
+    BaseExceptionGroup
+        If a context manager raises an exception on entry or exit.
     """
 
     if managers and isinstance(managers[0], Iterable):

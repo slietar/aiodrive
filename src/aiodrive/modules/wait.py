@@ -64,15 +64,20 @@ async def wait(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool = T
     The awaitables or tasks to wait for. The function returns immediately if the
     iterable is empty.
   sensitive
-    Whether to cancel other tasks as soon as one task raises an exception.
+    Whether to cancel other tasks as soon as a task raises an exception.
 
   Returns
   -------
   tuple[T, ...]
     Results from the provided tasks, in the same order as the awaitables.
+
+  Raises
+  ------
+  BaseExceptionGroup
+    If an awaitable raises an exception.
   """
 
-  if awaitables and isinstance(awaitables[0], Iterable):
+  if awaitables and not isinstance(awaitables[0], Awaitable):
     assert len(awaitables) == 1
     effective_awaitables = awaitables[0]
   else:
@@ -120,6 +125,12 @@ async def wait(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool = T
 
   exceptions = [exc for task in tasks if not task.cancelled() and (exc := task.exception()) is not None]
 
+  # This can potentially be added later on
+  #
+  # for e in exceptions:
+  #   if isinstance(e, KeyboardInterrupt | SystemExit):
+  #     raise e
+
   if exceptions:
     raise BaseExceptionGroup("", exceptions)
 
@@ -140,20 +151,28 @@ __all__ = [
 if __name__ == "__main__":
   import asyncio
 
-  async def a():
-    await asyncio.sleep(1)
-    print("A done")
-    raise ValueError("Test error in a")
-    return 43
+  # async def a():
+  #   await asyncio.sleep(1)
+  #   print("A done")
+  #   raise ValueError("Test error in a")
+  #   return 43
 
   async def main():
-    result = await wait(
-      a(),
-      asyncio.sleep(2),
-      sensitive=False,
-    )
+    async def a():
+      import sys
+      sys.exit(1)
+      # raise ValueError("Test error in a")
 
-    print("Results:", result)
+    await wait(a())
+
+
+    # result = await wait(
+    #   a(),
+    #   asyncio.sleep(2),
+    #   sensitive=False,
+    # )
+
+    # print("Results:", result)
 
     # async with asyncio.TaskGroup() as tg:
     #   tg.create_task(a())

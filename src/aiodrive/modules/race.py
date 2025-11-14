@@ -55,9 +55,14 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
   tuple[int, Any]
     A tuple containing the index of the first completed awaitable and its
     result.
+
+  Raises
+  ------
+  BaseExceptionGroup
+    If an awaitable raises an exception.
   """
 
-  if awaitables and isinstance(awaitables[0], Iterable):
+  if awaitables and not isinstance(awaitables[0], Awaitable):
     assert len(awaitables) == 1
     effective_awaitables = tuple(awaitables[0])
   else:
@@ -72,7 +77,7 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
     for task in tasks:
       task.cancel()
 
-    await wait(tasks)
+    await wait(tasks, sensitive=False)
     raise
 
   winning_task = next(iter(done_tasks))
@@ -80,7 +85,7 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
   for task in pending_tasks:
     task.cancel()
 
-  await wait(pending_tasks)
+  await wait(pending_tasks, sensitive=False)
   return tasks.index(winning_task), winning_task.result()
 
 

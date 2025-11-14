@@ -26,4 +26,5 @@ from .modules.thread_loop import *
 from .modules.thread_safe_lock import *
 from .modules.thread_safe_state import *
 from .modules.wait import *
+from .modules.wait_unordered import *
 from .modules.zip import *

@@ -31,40 +31,33 @@ async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = T
 
   tasks = [asyncio.ensure_future(awaitable) for awaitable in awaitables]
 
-  if not tasks:
-    return
-
+  cancelled = False
   pending_tasks = set(tasks)
-  running = True
 
-  while running:
-    try:
-      done_tasks, pending_tasks = await asyncio.wait(pending_tasks, return_when=asyncio.FIRST_COMPLETED)
-    except asyncio.CancelledError:
-      for task in pending_tasks:
-        task.cancel()
-
-      await wait(tasks, sensitive=False)
-      raise
-
-    for task in done_tasks:
+  try:
+    while pending_tasks:
       try:
-        result = task.result()
-      except:  # noqa: E722
-        if sensitive:
-          running = False
-          break
-      else:
+        done_tasks, pending_tasks = await asyncio.wait(pending_tasks, return_when=asyncio.FIRST_COMPLETED)
+      except asyncio.CancelledError:
+        cancelled = True
+        return
+
+      for task in done_tasks:
         try:
+          result = task.result()
+        except:  # noqa: E722
+          if sensitive:
+            return
+        else:
           yield result
-        except GeneratorExit:
-          await wait(tasks, sensitive=False)
-          raise
+  finally:
+    for task in pending_tasks:
+      task.cancel()
 
-    if not pending_tasks:
-      break
+    await wait(tasks, sensitive=False)
 
-  await wait(tasks, sensitive=False)
+  if cancelled:
+    raise asyncio.CancelledError
 
 
 __all__ = [
@@ -72,55 +65,58 @@ __all__ = [
 ]
 
 
-async def main():
-  async def gen(delay: float, value: int):
-    await asyncio.sleep(delay)
-    return value
+if __name__ == "__main__":
+  async def main():
+    async def gen(delay: float, value: int):
+      await asyncio.sleep(delay)
+      return value
 
-  async def fail(delay: float):
-    await asyncio.sleep(delay)
-    raise ValueError("Intentional failure")
+    async def fail(delay: float):
+      await asyncio.sleep(delay)
+      raise ValueError("Intentional failure")
 
-  async for result in amass([
-    gen(1.5, 3),
-    gen(.5, 1),
-    gen(1, 2),
-    fail(0.75),
-    fail(0.75),
-  ], sensitive=True):
-    print("Got result:", result)
+    async for result in amass([
+      # gen(1.5, 3),
+      # gen(.5, 1),
+      # gen(1, 2),
+      # fail(0.75),
+      # fail(0.75),
+    ], sensitive=False):
+      print("Got result:", result)
 
-  # current_task = asyncio.current_task()
-  # assert current_task is not None
+    print("ok")
 
-  # current_task.cancel()
-  # print(current_task.cancelling())
-  # current_task.cancel()
-  # print(current_task.cancelling())
+    # current_task = asyncio.current_task()
+    # assert current_task is not None
 
-  # try:
-  #   await asyncio.sleep(1)
-  # except asyncio.CancelledError:
-  #   print(current_task.cancelling())
+    # current_task.cancel()
+    # print(current_task.cancelling())
+    # current_task.cancel()
+    # print(current_task.cancelling())
 
-  # try:
-  #   await asyncio.sleep(1)
-  # except asyncio.CancelledError:
-  #   print(current_task.cancelling())
-  # else:
-  #   print("Not cancelled")
+    # try:
+    #   await asyncio.sleep(1)
+    # except asyncio.CancelledError:
+    #   print(current_task.cancelling())
 
-  # async def a():
-  #   raise asyncio.CancelledError
+    # try:
+    #   await asyncio.sleep(1)
+    # except asyncio.CancelledError:
+    #   print(current_task.cancelling())
+    # else:
+    #   print("Not cancelled")
 
-  # try:
-  #   # await asyncio.sleep(1)
-  #   await a()
-  # except asyncio.CancelledError:
-  #   pass
+    # async def a():
+    #   raise asyncio.CancelledError
 
-  # asyncio.current_task().uncancel()
-  # await asyncio.sleep(1)
+    # try:
+    #   # await asyncio.sleep(1)
+    #   await a()
+    # except asyncio.CancelledError:
+    #   pass
+
+    # asyncio.current_task().uncancel()
+    # await asyncio.sleep(1)
 
 
-asyncio.run(main())
+  asyncio.run(main())

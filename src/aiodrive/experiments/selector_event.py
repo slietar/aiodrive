@@ -10,6 +10,8 @@ from os import PathLike
 from pathlib import Path
 from typing import Literal, Optional
 
+from ..modules.handle import using_pending_daemon_handle
+
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +76,7 @@ class WatchedInfo:
 
 type WatchPathEvent = Literal['create', 'delete', 'write']
 
-@contextlib.asynccontextmanager
+@using_pending_daemon_handle
 async def watch_path(
     raw_path: PathLike | str,
     /,
@@ -173,7 +175,7 @@ async def watch_path(
             else:
                 eager_callback('delete')
 
-            update_down(watched.path)
+            update_down(watched.path.parent)
         elif (event.fflags & select.KQ_NOTE_WRITE) > 0:
             if watching_ancestor:
                 # The target file was potentially added to the watched directory
@@ -242,10 +244,14 @@ async def watch_path(
             ),
         ])
 
-        if watched.path == target_path:
-            eager_callback('create')
+        if path.exists():
+            if watched.path == target_path:
+                eager_callback('create')
+            else:
+                update_up(watched.path)
         else:
-            update_up(watched.path)
+            # The file was deleted between opening and registering
+            update_down(path.parent)
 
     try:
         async with KqueueEventManager(internal_callback) as manager:

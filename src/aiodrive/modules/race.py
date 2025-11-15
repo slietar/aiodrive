@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Awaitable, Iterable
 from typing import Literal, overload
 
-from .wait import wait
+from .gather import gather
 
 
 @overload
@@ -39,7 +39,7 @@ async def race[T](awaitables: Iterable[Awaitable[T]], /) -> tuple[int, T]:
 
 async def race(*awaitables: Awaitable | Iterable[Awaitable]):
   """
-  Wait for the first awaitable to complete, and then cancel the others.
+  Wait for the fastest of a given set of awaitables.
 
   The function returns or raises an exception according to the status of the
   first task that finishes. All awaitables are cancelled if the call to itself
@@ -77,7 +77,7 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
     for task in tasks:
       task.cancel()
 
-    await wait(tasks, sensitive=False)
+    await gather(tasks, sensitive=False)
     raise
 
   winning_task = next(iter(done_tasks))
@@ -85,7 +85,7 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
   for task in pending_tasks:
     task.cancel()
 
-  await wait(pending_tasks, sensitive=False)
+  await gather(pending_tasks, sensitive=False)
   return tasks.index(winning_task), winning_task.result()
 
 

@@ -239,5 +239,5 @@ class FutureState[T]:
 
 
 __all__ = [
-    'FutureState',
+    "FutureState",
 ]

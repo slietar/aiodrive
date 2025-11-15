@@ -4,7 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from typing import overload
 
 from .cleanup import cleaned_up
-from .wait import wait
+from .gather import gather
 
 
 @overload
@@ -96,10 +96,10 @@ async def concurrent_contexts(*managers: AbstractAsyncContextManager | Iterable[
         return context_value
 
     async def exit_contexts():
-        await wait(manager.__aexit__(None, None, None) for manager in open_managers)
+        await gather(manager.__aexit__(None, None, None) for manager in open_managers)
 
     async with cleaned_up(exit_contexts):
-        yield tuple(await wait(enter_context(manager) for manager in effective_managers))
+        yield tuple(await gather(enter_context(manager) for manager in effective_managers))
 
 
 __all__ = [

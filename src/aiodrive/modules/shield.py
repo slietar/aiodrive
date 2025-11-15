@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 async def shield[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
   """
-  Shield and then await the provided awaitable.
+  Shield and await a given awaitable.
 
   Parameters
   ----------
@@ -85,8 +85,8 @@ class ShieldContext:
 
   async def shield[T](self, awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
     """
-    Shield and then await the provided awaitable, taking into account the
-    existing cancellation request count at the time of instantiation.
+    Shield and await a given awaitable, taking into account the existing
+    cancellation request count at the time of instantiation.
 
     Parameters
     ----------

@@ -1,8 +1,8 @@
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
 from typing import Optional
 
-from ..modules.task_group import eager_task_group
 from ..modules.aiter import ensure_aiter
+from ..modules.task_group import volative_task_group
 from .ordered_queue import OrderedQueue, UnorderedQueue
 
 
@@ -64,7 +64,7 @@ async def map_parallel[T, S](
     finally:
       job_count -= 1
 
-  async with eager_task_group() as group:
+  async with volative_task_group() as group:
     group.create_task(job())
     job_count += 1
 

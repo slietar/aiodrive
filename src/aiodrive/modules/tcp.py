@@ -7,7 +7,7 @@ from typing import Optional, override
 
 from .handle import using_pending_daemon_handle
 from .shield import ShieldContext
-from .task_group import eager_task_group
+from .task_group import volative_task_group
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +104,7 @@ class TCPServer:
     server = await asyncio.start_server(handle_connection_sync, host, port)
 
     try:
-      async with eager_task_group() as group:
+      async with volative_task_group() as group:
         try:
           yield TCPServer(
             bindings=[SockName.parse(sock.getsockname()) for sock in server.sockets],

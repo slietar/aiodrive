@@ -14,6 +14,7 @@ from .future_state import FutureState
 def prime[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = None) -> Awaitable[T]:
   """
   Prime an awaitable such that as much code as possible is executed immediately.
+
   This is akin to creating tasks with `asyncio.eager_task_factory` as the task
   factory.
 

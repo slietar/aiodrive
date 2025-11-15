@@ -85,23 +85,3 @@ __all__ = [
   'cancel_task',
   'suppress',
 ]
-
-
-async def main():
-  try:
-    await asyncio.sleep(10)
-  except asyncio.CancelledError:
-    with suppress(RuntimeError):
-      raise RuntimeError("An error occurred")
-
-    print("Ok")
-    raise
-
-
-if __name__ == "__main__":
-  import asyncio
-
-  try:
-    asyncio.run(main())
-  except KeyboardInterrupt:
-    print("Cancelled by user")

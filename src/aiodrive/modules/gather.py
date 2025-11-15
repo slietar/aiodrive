@@ -4,11 +4,11 @@ from typing import overload
 
 
 @overload
-async def wait[T1](*, sensitive: bool = ...) -> tuple[()]:
+async def gather[T1](*, sensitive: bool = ...) -> tuple[()]:
   ...
 
 @overload
-async def wait[T1](
+async def gather[T1](
   awaitable1: Awaitable[T1],
   /, *,
   sensitive: bool = ...,
@@ -16,7 +16,7 @@ async def wait[T1](
   ...
 
 @overload
-async def wait[T1, T2](
+async def gather[T1, T2](
   awaitable1: Awaitable[T1],
   awaitable2: Awaitable[T2],
   /, *,
@@ -25,7 +25,7 @@ async def wait[T1, T2](
   ...
 
 @overload
-async def wait[T1, T2, T3](
+async def gather[T1, T2, T3](
   awaitable1: Awaitable[T1],
   awaitable2: Awaitable[T2],
   awaitable3: Awaitable[T3],
@@ -35,17 +35,17 @@ async def wait[T1, T2, T3](
   ...
 
 @overload
-async def wait[T](*awaitables: Awaitable[T], sensitive: bool = ...) -> tuple[T, ...]:
+async def gather[T](*awaitables: Awaitable[T], sensitive: bool = ...) -> tuple[T, ...]:
   ...
 
 @overload
-async def wait[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = ...) -> tuple[T, ...]:
+async def gather[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = ...) -> tuple[T, ...]:
   ...
 
 
-async def wait(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool = True):
+async def gather(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool = True):
   """
-  Wait for all provided coroutines or tasks to complete.
+  Concurrently collect results from multiple awaitables.
 
   If an exception is raised by one of the tasks, the other tasks are still
   awaited without being cancelled, until all tasks finish. If a single exception
@@ -144,42 +144,5 @@ async def wait(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool = T
 
 
 __all__ = [
-  'wait',
+  'gather',
 ]
-
-
-if __name__ == "__main__":
-  import asyncio
-
-  # async def a():
-  #   await asyncio.sleep(1)
-  #   print("A done")
-  #   raise ValueError("Test error in a")
-  #   return 43
-
-  async def main():
-    async def a():
-      import sys
-      sys.exit(1)
-      # raise ValueError("Test error in a")
-
-    await wait(a())
-
-
-    # result = await wait(
-    #   a(),
-    #   asyncio.sleep(2),
-    #   sensitive=False,
-    # )
-
-    # print("Results:", result)
-
-    # async with asyncio.TaskGroup() as tg:
-    #   tg.create_task(a())
-    #   tg.create_task(asyncio.sleep(2))
-
-  try:
-    asyncio.run(main())
-  except KeyboardInterrupt:
-    print("Cancelled by user")
-    raise

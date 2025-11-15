@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from typing import overload
 
-from .wait import wait
+from .gather import gather
 
 
 @overload
@@ -70,7 +70,7 @@ async def zip_concurrently(*iterables: AsyncIterable | Iterable[AsyncIterable]) 
 
   while True:
     try:
-      items = await wait(anext(iterator) for iterator in iterators)
+      items = await gather(anext(iterator) for iterator in iterators)
     except* StopAsyncIteration as e:
       raise StopAsyncIteration from e # Mmmmh not sure
 

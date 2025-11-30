@@ -8,6 +8,11 @@ async def checkpoint():
 
   The current task may have been cancelled while performing a blocking
   operation, for example in the case of a KeyboardInterrupt.
+
+  Raises
+  ------
+  asyncio.CancelledError
+    If the current task was cancelled.
   """
 
   current_task = asyncio.current_task()
@@ -15,7 +20,6 @@ async def checkpoint():
 
   if current_task.cancelling() > 0:
     raise asyncio.CancelledError
-
 
 
 async def suspend():

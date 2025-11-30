@@ -25,8 +25,7 @@ class Button:
 @dataclass(slots=True)
 class Cargo[T]:
   """
-  A class that wakes up registered waiters with a value when called with that
-  value.
+  A class that wakes up registered waiters with a value when called with that value.
   """
 
   _future: Future[T] = field(default_factory=Future, init=False, repr=False)

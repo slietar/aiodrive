@@ -7,11 +7,11 @@ from typing import Optional, override
 
 from .handle import using_pending_daemon_handle
 from .shield import ShieldContext
-from .task_group import volative_task_group
+from .task_group import volatile_task_group
 
 
 @dataclass(frozen=True, slots=True)
-class SockName:
+class SocketName:
   address: IPv4Address | IPv6Address
   port: int
 
@@ -38,8 +38,8 @@ class SockName:
 
 @dataclass(slots=True)
 class Connection:
-  client_name: SockName
-  server_name: SockName
+  client_name: SocketName
+  server_name: SocketName
 
   reader: StreamReader = field(repr=False)
   writer: StreamWriter = field(repr=False)
@@ -47,7 +47,11 @@ class Connection:
 
 @dataclass(slots=True)
 class TCPServer:
-  bindings: Iterable[SockName]
+  """
+  A TCP server.
+  """
+
+  bindings: Iterable[SocketName]
 
   @staticmethod
   @using_pending_daemon_handle
@@ -92,8 +96,8 @@ class TCPServer:
 
       try:
         await handler(Connection(
-          SockName.parse(writer.transport.get_extra_info('peername')),
-          SockName.parse(writer.transport.get_extra_info('sockname')),
+          SocketName.parse(writer.transport.get_extra_info('peername')),
+          SocketName.parse(writer.transport.get_extra_info('sockname')),
           reader,
           writer,
         ))
@@ -104,10 +108,10 @@ class TCPServer:
     server = await asyncio.start_server(handle_connection_sync, host, port)
 
     try:
-      async with volative_task_group() as group:
+      async with volatile_task_group() as group:
         try:
           yield TCPServer(
-            bindings=[SockName.parse(sock.getsockname()) for sock in server.sockets],
+            bindings=[SocketName.parse(sock.getsockname()) for sock in server.sockets],
           )
         finally:
           server.close()
@@ -117,6 +121,6 @@ class TCPServer:
 
 __all__ = [
   'Connection',
-  'SockName',
+  'SocketName',
   'TCPServer',
 ]

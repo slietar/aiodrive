@@ -7,8 +7,8 @@ from .shield import ShieldContext
 @contextlib.asynccontextmanager
 async def cleaned_up(callback: Callable[[], Awaitable[None]], /):
   """
-  Create a context manager that calls the given async callback when exiting the
-  context.
+  Create a context manager that calls the given asynchronous callback when
+  exiting the context.
 
   The callback is shielded from exactly one cancellation with respect to when
   the context was entered.

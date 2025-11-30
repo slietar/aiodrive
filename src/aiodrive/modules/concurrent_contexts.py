@@ -43,7 +43,7 @@ def concurrent_contexts[T](*managers: AbstractAsyncContextManager[T]) -> Abstrac
 def concurrent_contexts[T](managers: Iterable[AbstractAsyncContextManager[T]], /) -> AbstractAsyncContextManager[tuple[T, ...]]:
     ...
 
-@contextlib.asynccontextmanager
+@contextlib.asynccontextmanager # ty: ignore
 async def concurrent_contexts(*managers: AbstractAsyncContextManager | Iterable[AbstractAsyncContextManager]) -> AsyncIterator[tuple]:
     """
     Enter multiple asynchronous context managers concurrently.

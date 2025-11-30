@@ -5,7 +5,7 @@ from asyncio import AbstractEventLoop
 
 def get_event_loop():
   """
-  Get the current event loop.
+  Get the current event loop, if any.
 
   Returns
   -------

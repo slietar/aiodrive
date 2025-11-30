@@ -7,7 +7,7 @@ from typing import Optional
 
 def run[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = None):
   """
-  Run an awaitable in an event loop while enforcing structured concurrency.
+  Run an awaitable in an event loop with enforced structured concurrency.
 
   Unlike `asyncio.run`, there must not be any extraneous task or async generator
   left after the awaitable finishes.

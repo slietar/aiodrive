@@ -2,7 +2,7 @@ from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
 from typing import Optional
 
 from ..modules.aiter import ensure_aiter
-from ..modules.task_group import volative_task_group
+from ..modules.task_group import volatile_task_group
 from .ordered_queue import OrderedQueue, UnorderedQueue
 
 
@@ -14,10 +14,8 @@ async def map_parallel[T, S](
   ordered: bool,
 ):
   """
-  Map an `Iterable` or `AsyncIterable` to another `AsyncIterable` using the
-  provided asynchronous mapper function.
-
-  The current task is cancelled if the iterable raises an exception.
+  Map an `Iterable` or `AsyncIterable` to another `AsyncIterable` using a given
+  asynchronous mapper function.
 
   Parameters
   ----------
@@ -64,7 +62,7 @@ async def map_parallel[T, S](
     finally:
       job_count -= 1
 
-  async with volative_task_group() as group:
+  async with volatile_task_group() as group:
     group.create_task(job())
     job_count += 1
 

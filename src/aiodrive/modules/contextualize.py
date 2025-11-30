@@ -10,13 +10,16 @@ from .scope import use_scope
 @contextlib.asynccontextmanager
 async def contextualize(awaitable: Awaitable[None], /):
   """
-  Transform an awaitable into an async context manager.
+  Transform an awaitable into an asynchronous context manager.
 
   When the context is exited, the background task created from the awaitable is
   cancelled and awaited, if still running. If the background task raises an
   exception, the current task is cancelled until exiting the context. If both
   the current and background tasks raise an exception, the exceptions are
   aggregated into an `ExceptionGroup`.
+
+  Exceptions are reported in a `BaseExceptionGroup` only if both the background
+  task and the current task raised exceptions.
 
   Parameters
   ----------

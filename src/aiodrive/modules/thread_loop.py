@@ -141,7 +141,7 @@ async def run_in_thread_loop_contextualized(target: Awaitable[None], /) -> Async
     Parameters
     ----------
     target
-        The awaitable to run in a separate thread.
+        The awaitable to run in a separate thread. Its return value is discarded.
 
     Returns
     -------

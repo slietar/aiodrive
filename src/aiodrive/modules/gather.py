@@ -4,7 +4,7 @@ from typing import overload
 
 
 @overload
-async def gather[T1](*, sensitive: bool = ...) -> tuple[()]:
+async def gather(*, sensitive: bool = ...) -> tuple[()]:
   ...
 
 @overload
@@ -47,22 +47,11 @@ async def gather(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool =
   """
   Concurrently collect results from multiple awaitables.
 
-  If an exception is raised by one of the tasks, the other tasks are still
-  awaited without being cancelled, until all tasks finish. If a single exception
-  is raised while awaiting tasks, it is re-raised. If more than one exception is
-  raised, a `BaseExceptionGroup` is raised with the caught exceptions.
-
-  If the call to this function is cancelled, all unfinished tasks are cancelled
-  and awaited. The `asyncio.CancelledError` exception is re-raised if no other
-  exception was raised by the tasks, otherwise the procedure described earlier
-  is applied. If another cancellation occurs while still awaiting the tasks,
-  tasks are cancelled and awaited again.
-
   Parameters
   ----------
   awaitables
-    The awaitables or tasks to wait for. The function returns immediately if the
-    iterable is empty.
+    The awaitables to wait for, as multiple arguments or as an iterable. The
+    function returns immediately if the iterable is empty.
   sensitive
     Whether to cancel other tasks as soon as a task raises an exception.
 
@@ -135,7 +124,7 @@ async def gather(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool =
     raise BaseExceptionGroup("", exceptions)
 
   # Still raise an asyncio.CancelledError if any task was externally cancelled
-  # The check on "canceled" is not redundant as tasks may have suppressed their
+  # The check on "cancelled" is not redundant as tasks may have suppressed their
   # cancellation
   if cancelled or any(task.cancelled() for task in tasks):
     raise asyncio.CancelledError

@@ -9,7 +9,7 @@ class TaskGroupTerminatedException(Exception):
   pass
 
 @contextlib.asynccontextmanager
-async def volative_task_group() -> AsyncIterator[TaskGroup]:
+async def volatile_task_group() -> AsyncIterator[TaskGroup]:
   """
   Create a `TaskGroup` that automatically terminates when exiting the context.
 
@@ -25,5 +25,5 @@ async def volative_task_group() -> AsyncIterator[TaskGroup]:
 
 
 __all__ = [
-  'volative_task_group',
+  'volatile_task_group',
 ]

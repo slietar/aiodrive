@@ -41,14 +41,10 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
   """
   Wait for the fastest of a given set of awaitables.
 
-  The function returns or raises an exception according to the status of the
-  first task that finishes. All awaitables are cancelled if the call to itself
-  is cancelled.
-
   Parameters
   ----------
   awaitables
-    The awaitables to wait for.
+    The awaitables to wait for, as multiple arguments or as an iterable.
 
   Returns
   -------

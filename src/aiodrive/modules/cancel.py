@@ -35,7 +35,7 @@ class SuppressFailureError(RuntimeError):
 @contextlib.contextmanager
 def suppress(*exceptions: type[BaseException], strict: bool = False):
   """
-  Suppress the specified exceptions in an async context.
+  Suppress the specified exceptions in an asynchronous context.
 
   Unlike `contextlib.suppress`, this context manager ensures that, if there is a
   running event loop and the current task was cancelled while inside the

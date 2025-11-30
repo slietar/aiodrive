@@ -3,7 +3,7 @@ import contextlib
 from asyncio import Future
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, Optional, cast
+from typing import Any, Literal, Optional, cast
 
 
 @dataclass(kw_only=True, slots=True)
@@ -130,7 +130,7 @@ class FutureState[T]:
         return cls(result=result, status="success")
 
     @contextlib.contextmanager
-    def absorb_context(cls, /, result: T = None):
+    def absorb_context(cls, /, result: T = cast(Any, None)):
         """
         Create a context manager that absorbs the outcome of the context block
         into a new instance.

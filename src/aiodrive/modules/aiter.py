@@ -1,6 +1,6 @@
 from collections import deque
 from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
-from typing import Optional, cast, overload
+from typing import Any, Optional, cast, overload
 
 from .contextualize import contextualize
 from .latch import Latch
@@ -8,7 +8,8 @@ from .latch import Latch
 
 async def buffer_aiter[T](iterable: AsyncIterable[T], /, *, size: Optional[int]):
   """
-  Create an async generator that prefetches items from the given async iterable.
+  Create an asynchronous generator that prefetches items from the given async
+  iterable.
 
   Items are prefetched sequentially from the iterable. The current task is
   cancelled if the iterable raises an exception.
@@ -69,7 +70,8 @@ async def collect[T](iterable: AsyncIterable[T], /):
 
 def ensure_aiter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterator[T]:
   """
-  Create an async iterator from the provided sync or async iterable.
+  Create an asynchronous iterator from the provided synchrounous or asynchronous
+  iterable.
 
   Parameters
   ----------
@@ -102,9 +104,9 @@ async def reduce[T](reducer: Callable[[T, T], T], iterable: AsyncIterable[T], /)
 async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T], /, initial: S):
   ...
 
-async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T], /, initial: S = initial_missing):
+async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T], /, initial: S = cast(Any, initial_missing)):
   """
-  Reduce the items from the provided async iterable.
+  Reduce the items from the provided asynchronous iterable.
 
   Parameters
   ----------

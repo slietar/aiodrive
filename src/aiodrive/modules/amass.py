@@ -6,7 +6,7 @@ from .gather import gather
 
 async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True):
   """
-  Create an asynchronous iterator that yields results from awaitables as they
+  Create an asynchronous generator that yields results from awaitables as they
   complete.
 
   It is crucial to close the generator for internal tasks to be cleaned up.
@@ -14,7 +14,7 @@ async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = T
   Parameters
   ----------
   awaitables
-    The awaitables to wait for.
+    The awaitables to wait for, as multiple arguments or as an iterable.
   sensitive
     Whether to stop yielding results as soon as an exception is raised by one of
     the awaitables. If `True` and if a successful and a failed awaitable both

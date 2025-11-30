@@ -38,7 +38,7 @@ async def shield[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
 
 async def shield_forever[T](awaitable: Awaitable[T], /) -> T:
   """
-  Shield and then await the provided awaitable forever, ignoring all
+  Shield and await the provided awaitable indefinitely, ignoring all
   cancellation requests.
 
   Parameters

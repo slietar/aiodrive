@@ -2,6 +2,8 @@ from asyncio import Task
 from collections.abc import Awaitable
 from typing import Never
 
+from .awaitable import ConcreteAwaitable
+
 
 type DaemonAwaitable = Awaitable[Never]
 type DaemonTask = Task[Never]
@@ -11,9 +13,13 @@ class DaemonReturnError(Exception):
   pass
 
 
-async def ensure_daemon(awaitable: DaemonAwaitable, /):
+def ensure_daemon(awaitable: DaemonAwaitable, /) -> Awaitable[Never]:
   """
-  Ensure that the provided awaitable never returns.
+  Create a new awaitable that raises an exception if the given awaitable
+  returns.
+
+  Each await of the returned awaitable leads to an await of the given awaitable.
+  If the returned awaitable is not awaited, the given awaitable is not awaited.
 
   Parameters
   ----------
@@ -26,8 +32,11 @@ async def ensure_daemon(awaitable: DaemonAwaitable, /):
     If the awaitable returns.
   """
 
-  await awaitable
-  raise DaemonReturnError
+  def func():
+    yield from awaitable.__await__()
+    raise DaemonReturnError
+
+  return ConcreteAwaitable[Never](func)
 
 
 __all__ = [

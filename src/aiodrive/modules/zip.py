@@ -42,8 +42,8 @@ def zip_concurrently[T](iterables: Iterable[AsyncIterable[T]], /) -> AsyncIterat
 
 async def zip_concurrently(*iterables: AsyncIterable | Iterable[AsyncIterable]) -> AsyncIterator[tuple]:
   """
-  Zip multiple async iterables together, yielding tuples of items from each
-  iterable.
+  Zip multiple asynchronous iterables together, yielding tuples of items from
+  each iterable.
 
   If one of the iterators raises an exception or is exhausted, all remaining
   queries to iterators are cancelled. Items obtained from completed queries are

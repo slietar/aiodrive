@@ -1,7 +1,7 @@
-from asyncio import Future, TaskGroup
 import asyncio
-from collections import deque
 import contextlib
+from asyncio import Future
+from collections import deque
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Literal, NewType

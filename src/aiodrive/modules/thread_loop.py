@@ -1,12 +1,13 @@
 import asyncio
-import contextlib
-from collections.abc import AsyncIterator, Awaitable
+from asyncio import Task
+from collections.abc import Awaitable
 from threading import Thread
 from typing import Literal, Optional
 
 from .contextualize import contextualize
 from .future_state import FutureState
 from .thread_safe_state import ThreadsafeState
+from .thread_sync import double_context_manager, run_in_thread_loop_contextualized_sync
 
 
 async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
@@ -30,7 +31,7 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
 
     result: Optional[FutureState[T]] = None
     stage = ThreadsafeState[Literal["join", "preparing", "running"]]("preparing")
-    task: Optional[asyncio.Task[T]] = None
+    task: Optional[Task[T]] = None
 
     def thread_main():
         nonlocal result, stage
@@ -129,8 +130,7 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
     return await (await launch_in_thread_loop(target))
 
 
-@contextlib.asynccontextmanager
-async def run_in_thread_loop_contextualized(target: Awaitable[None], /) -> AsyncIterator[None]:
+async def run_in_thread_loop_contextualized_async(target: Awaitable[None], /):
     """
     Run an awaitable in a separate thread with its own event loop, using a
     context manager.
@@ -154,6 +154,12 @@ async def run_in_thread_loop_contextualized(target: Awaitable[None], /) -> Async
         await launch_in_thread_loop(target),
     ):
         yield
+
+
+run_in_thread_loop_contextualized = double_context_manager(
+    run_in_thread_loop_contextualized_sync,
+    run_in_thread_loop_contextualized_async,
+)
 
 
 __all__ = [

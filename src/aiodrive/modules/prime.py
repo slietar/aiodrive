@@ -3,8 +3,7 @@ import contextlib
 import functools
 import types
 from asyncio import AbstractEventLoop
-from collections.abc import Awaitable, Callable
-from types import CoroutineType
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Optional
 
 from .event_loop import set_event_loop
@@ -68,8 +67,7 @@ def prime[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = 
 
   return inner()
 
-
-def primed[**P, R](func: Callable[P, Awaitable[R]], /) -> Callable[P, CoroutineType[Any, Any, R]]:
+def primed[**P, R](func: Callable[P, Awaitable[R]], /) -> Callable[P, Coroutine[Any, Any, R]]:
   """
   Decorate the given function such that it returns a primed awaitable.
   """

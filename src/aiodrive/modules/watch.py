@@ -1,72 +1,16 @@
 import asyncio
-import contextlib
 import logging
 import os
 import select
 from asyncio import Handle, TimerHandle
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
 from typing import Literal, Optional
 
-from ..modules.handle import using_pending_daemon_handle
-
-
-logger = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class _KqueueEventManager:
-    update: Callable[[Iterable[select.kevent]], None]
-    """
-    Update kqueue event registrations.
-
-    Parameters
-    ----------
-    events
-        An iterable of kqueue events to register.
-    """
-
-
-@contextlib.asynccontextmanager
-async def KqueueEventManager(
-    callback: Callable[[select.kevent], None],
-    /,
-):
-    """
-    Create a context manager for receiving kqueue events.
-
-    Parameters
-    ----------
-    callback
-        A callback that is called when a kqueue event is received.
-
-    Returns
-    -------
-    AbstractAsyncContextManager[_KqueueEventManager]
-        A context manager that provides an update function to register kqueue
-        event registrations.
-    """
-
-    kq = select.kqueue()
-    kq_fd = kq.fileno()
-
-    def update(events: Iterable[select.kevent]):
-        kq.control(events, 0, None)
-
-    def internal_callback():
-        event = kq.control(None, 1, 0)
-        callback(event[0])
-
-    loop = asyncio.get_running_loop()
-    loop.add_reader(kq_fd, internal_callback)
-
-    try:
-        yield _KqueueEventManager(update)
-    finally:
-        loop.remove_reader(kq_fd)
-        kq.close()
+from .handle import using_pending_daemon_handle
+from .kqueue import KqueueEventManager
 
 
 @dataclass(slots=True)
@@ -86,7 +30,7 @@ async def watch_path(
     debounce_delay: Optional[float] = None,
 ):
     """
-    Watch a single path.
+    Watch a filesystem path.
 
     This function is only supported if kqueue is available.
 
@@ -108,8 +52,10 @@ async def watch_path(
 
     Returns
     -------
-    AbstractAsyncContextManager[None]
+    PendingDaemonHandle[None]
     """
+
+    logger = logging.getLogger(__name__)
 
     callback_handle: Optional[Handle | TimerHandle] = None
     last_reported_exists: Optional[bool] = None
@@ -266,17 +212,6 @@ async def watch_path(
 
 
 __all__ = [
-    'KqueueEventManager',
-    'WatchPathEvent',
-    'watch_path',
+    "WatchPathEvent",
+    "watch_path",
 ]
-
-
-if __name__ == "__main__":
-    async def main():
-        logging.basicConfig(level=logging.DEBUG)
-
-        async with watch_path('playground/a/b/c', print):
-            await asyncio.Future()
-
-    asyncio.run(main())

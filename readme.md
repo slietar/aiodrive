@@ -74,6 +74,9 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`Cargo`**<br>A class that wakes up registered waiters with a value when called with that value.
   - **`get_event_loop()`**<br>Get the current event loop, if any.
   - **`set_event_loop()`**<br>Set the current event loop.
+- Working with I/O events
+  - **`KqueueKqueueEventManager`**<br>Create a context manager for receiving kqueue events.
+  - **`watch_path()`**<br>Watch a filesystem path.
 - Networking
   - **`TCPServer`**<br>A TCP server.
 - Miscellaneous

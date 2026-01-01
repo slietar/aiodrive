@@ -1,5 +1,7 @@
 import contextlib
 
+from ..internal.sized import SupportsAclose, SupportsClose
+
 
 @contextlib.contextmanager
 def auto_closing(obj: object, /):
@@ -20,10 +22,8 @@ def auto_closing(obj: object, /):
   try:
     yield None
   finally:
-    close = getattr(obj, "close", None)
-
-    if close is not None:
-      close()
+    if isinstance(obj, SupportsClose):
+      obj.close()
 
 
 @contextlib.asynccontextmanager
@@ -45,10 +45,8 @@ async def auto_aclosing(obj: object, /):
   try:
     yield obj
   finally:
-    aclose = getattr(obj, "aclose", None)
-
-    if aclose is not None:
-      await aclose()
+    if isinstance(obj, SupportsAclose):
+      await obj.aclose()
 
 
 __all__ = [

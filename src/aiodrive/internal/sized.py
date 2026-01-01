@@ -1,9 +1,5 @@
-from collections.abc import AsyncIterable, Sized
+from collections.abc import AsyncIterable, Iterable, Sized
 from typing import Optional, Protocol, runtime_checkable
-
-
-class CloseableSizedAsyncIterable[T](AsyncIterable[T], Sized, Protocol):
-    ...
 
 
 @runtime_checkable
@@ -15,6 +11,19 @@ class SupportsClose(Protocol):
 class SupportsAclose(Protocol):
     async def aclose(self) -> None:
         ...
+
+
+class CloseableSizedAsyncIterable[T](AsyncIterable[T], Sized, SupportsAclose, Protocol):
+    ...
+
+class CloseableAsyncIterable[T](AsyncIterable[T], SupportsAclose, Protocol):
+    ...
+
+class SizedAsyncIterable[T](AsyncIterable[T], Sized, Protocol):
+    ...
+
+class SizedIterable[T](Iterable[T], Sized, Protocol):
+    ...
 
 
 class sized_aiter[T]:

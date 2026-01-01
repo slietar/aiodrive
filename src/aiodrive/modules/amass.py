@@ -1,10 +1,14 @@
 import asyncio
 from collections.abc import Awaitable, Iterable
 
+from ..internal.sized import (
+  CloseableSizedAsyncIterable,
+  sized_aiter,
+)
 from .gather import gather
 
 
-async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True):
+async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -> CloseableSizedAsyncIterable[T]:
   """
   Create an asynchronous generator that yields results from awaitables as they
   complete.
@@ -34,33 +38,36 @@ async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = T
 
   tasks = [asyncio.ensure_future(awaitable) for awaitable in awaitables]
 
-  cancelled = False
-  pending_tasks = set(tasks)
+  async def generator():
+    cancelled = False
+    pending_tasks = set(tasks)
 
-  try:
-    while pending_tasks:
-      try:
-        done_tasks, pending_tasks = await asyncio.wait(pending_tasks, return_when=asyncio.FIRST_COMPLETED)
-      except asyncio.CancelledError:
-        cancelled = True
-        return
-
-      for task in done_tasks:
+    try:
+      while pending_tasks:
         try:
-          result = task.result()
-        except:  # noqa: E722
-          if sensitive:
-            return
-        else:
-          yield result
-  finally:
-    for task in pending_tasks:
-      task.cancel()
+          done_tasks, pending_tasks = await asyncio.wait(pending_tasks, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+          cancelled = True
+          return
 
-    await gather(tasks, sensitive=False)
+        for task in done_tasks:
+          try:
+            result = task.result()
+          except:  # noqa: E722
+            if sensitive:
+              return
+          else:
+            yield result
+    finally:
+      for task in pending_tasks:
+        task.cancel()
 
-  if cancelled:
-    raise asyncio.CancelledError
+      await gather(tasks, sensitive=False)
+
+    if cancelled:
+      raise asyncio.CancelledError
+
+  return sized_aiter(generator(), length=len(tasks))
 
 
 __all__ = [

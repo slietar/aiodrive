@@ -1,11 +1,37 @@
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Sized
-from typing import Optional
+from typing import Optional, overload
 
 from ..internal.queue import OrderedQueue, UnorderedQueue
-from ..internal.sized import CloseableSizedAsyncIterable, sized_aiter
+from ..internal.sized import (
+  CloseableAsyncIterable,
+  CloseableSizedAsyncIterable,
+  SizedAsyncIterable,
+  SizedIterable,
+  sized_aiter,
+)
 from .aiter import ensure_aiter
 from .task_group import volatile_task_group
 
+
+@overload
+def map[T, S](
+  mapper: Callable[[T], Awaitable[S]],
+  iterable: SizedAsyncIterable[T] | SizedIterable[T],
+  /, *,
+  max_concurrent_count: Optional[int] = ...,
+  ordered: bool,
+) -> CloseableSizedAsyncIterable[S]:
+  ...
+
+@overload
+def map[T, S](
+  mapper: Callable[[T], Awaitable[S]],
+  iterable: AsyncIterable[T] | Iterable[T],
+  /, *,
+  max_concurrent_count: Optional[int] = ...,
+  ordered: bool,
+) -> CloseableAsyncIterable[S]:
+  ...
 
 def map[T, S](
   mapper: Callable[[T], Awaitable[S]],
@@ -13,7 +39,7 @@ def map[T, S](
   /, *,
   max_concurrent_count: Optional[int] = None,
   ordered: bool,
-) -> CloseableSizedAsyncIterable[S]:
+) -> CloseableAsyncIterable[S] | CloseableSizedAsyncIterable[S]:
   """
   Map an `Iterable` or `AsyncIterable` to an `AsyncIterable` using the given
   asynchronous mapper function.
@@ -44,9 +70,9 @@ def map[T, S](
 
   assert (max_concurrent_count is None) or (max_concurrent_count >= 1)
 
-  queue = OrderedQueue[S]() if ordered else UnorderedQueue[S]()
-
   async def generator():
+    queue = OrderedQueue[S]() if ordered else UnorderedQueue[S]()
+
     iterator = ensure_aiter(iterable)
     job_count = 0
 

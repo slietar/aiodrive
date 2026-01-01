@@ -15,6 +15,7 @@ from .modules.gather import *
 from .modules.guaranteed_task import *
 from .modules.handle import *
 from .modules.latch import *
+from .modules.map import *
 from .modules.nestable_lock import *
 from .modules.prime import *
 from .modules.race import *

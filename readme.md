@@ -37,6 +37,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`collect()`**<br>Collect items of an async iterable into a list.
   - **`ensure_aiter()`**<br>Create an asynchronous iterator from the provided synchrounous or asynchronous iterable.
   - **`ensure_daemon()`**<br>Create a new awaitable that raises an exception if the given awaitable returns.
+  - **`map()`**<br>Map an iterable or asynchronous iterable to an asynchronous iterable using the given asynchronous mapper function.
   - **`reduce()`**<br>Reduce the items from the provided asynchronous iterable.
   - **`zip_concurrently()`**<br>Zip multiple asynchronous iterables together, yielding tuples of items from each iterable.
 - Creating context managers
@@ -102,3 +103,4 @@ Unless specified otherwise, the following requirements and guarantees apply:
 - Returned awaitables may be wrapped as tasks using an eager task factory.
 - Arguments must belong to the same event loop as the one in which the function or class is used. Classes must be instantiated and used in the same event loop.
 - Functions and classes have a well-defined behavior for at least one cancellation. Some functions and classes support an arbitrary number of cancellations.
+- The `__len__()` method of argument iterables, if any, is maintained on the returned iterables whenever possible.

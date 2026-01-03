@@ -1,23 +1,75 @@
 import asyncio
+import contextlib
 from asyncio import Future, Task
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
-from signal import Signals
-from types import CoroutineType
-from typing import Any
 
-import aiodrive
-
+from ..modules.contextualize import contextualize
+from ..modules.future_state import FutureState
+from ..modules.shield import shield_forever
 from .to_thread import to_thread_patient
+
+
+def shield[T](inner: Future[T], /):
+    if inner.done():
+        return inner
+
+    outer = Future[T]()
+
+    def inner_callback(_inner: Future[T]):
+        if outer.cancelled():
+            return
+
+        FutureState.absorb_future(inner).transfer(outer)
+
+    def outer_callback(_outer: Future[T]):
+        inner.remove_done_callback(inner_callback)
+
+    inner.add_done_callback(inner_callback)
+    outer.add_done_callback(outer_callback)
+
+    return outer
+
+
+async def to_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+    return await shield_forever(asyncio.to_thread(func, *args, **kwargs))
+
+
+async def recv_connection(conn: Connection, /):
+    """
+    Receive a message from a multiprocessing `Connection`.
+
+    Parameters
+    ----------
+    conn
+        The `Connection` to receive the message from.
+
+    Returns
+    -------
+    Any
+        The received message.
+    """
+
+    job = asyncio.ensure_future(to_thread(conn.recv))
+
+    try:
+        return await shield(job)
+    except asyncio.CancelledError:
+        conn.close()
+
+        with contextlib.suppress(IOError):
+            await job
+
+        raise
 
 
 @dataclass(slots=True)
 class CreateTaskMessage:
     task_id: int
-    target: Callable[..., CoroutineType]
+    target: Callable[..., Awaitable]
     args: tuple
     kwargs: dict
 
@@ -25,11 +77,10 @@ class CreateTaskMessage:
 class CancelTaskMessage:
     task_id: int
 
-
 # TODO: Race condition between CancelTaskMessage and FinishTaskMessage
 @dataclass(slots=True)
 class FinishTaskMessage:
-    state: aiodrive.FutureState
+    state: FutureState
     task_id: int
 
 
@@ -38,50 +89,33 @@ def process_main(conn: Connection):
     asyncio.run(process_main_async(conn))
 
 async def process_main_async(conn: Connection):
-    loop = asyncio.get_running_loop()
-    loop.add_signal_handler(Signals.SIGINT, lambda: None)
+    # loop = asyncio.get_running_loop()
+    # loop.add_signal_handler(Signals.SIGINT, lambda: None)
 
     tasks = dict[int, Task]()
 
-    async def handle_messages():
-        while True:
-            try:
-                message: CreateTaskMessage | CancelTaskMessage = await to_thread_patient(conn.recv)
-            except EOFError:
-                assert not tasks
-                break
-
-            match message:
-                case CreateTaskMessage():
-                    task = asyncio.create_task(message.target(*message.args, **message.kwargs))
-                    task.add_done_callback(lambda task, task_id = message.task_id: task_done_callback(task_id))
-                    tasks[message.task_id] = task
-                case CancelTaskMessage():
-                    tasks[message.task_id].cancel()
-                case _:
-                    raise ValueError
-
     def task_done_callback(task_id: int):
         task = tasks.pop(task_id)
-        state = aiodrive.FutureState.absorb_future(task)
+        state = FutureState.absorb_future(task)
 
         conn.send(FinishTaskMessage(state, task_id))
 
-    await handle_messages()
+    while True:
+        try:
+            message: CreateTaskMessage | CancelTaskMessage = await to_thread(conn.recv)
+        except EOFError:
+            assert not tasks
+            break
 
-
-async def recv_conn(conn: Connection):
-    job = asyncio.create_task(to_thread_patient(conn.recv))
-
-    try:
-        return await asyncio.shield(job)
-    except asyncio.CancelledError:
-        conn.close()
-
-        with aiodrive.suppress(IOError):
-            await job
-
-        raise
+        match message:
+            case CreateTaskMessage():
+                task = asyncio.ensure_future(message.target(*message.args, **message.kwargs))
+                task.add_done_callback(lambda task, task_id = message.task_id: task_done_callback(task_id))
+                tasks[message.task_id] = task
+            case CancelTaskMessage():
+                tasks[message.task_id].cancel()
+            case _:
+                raise ValueError
 
 
 class AsyncProcess:
@@ -96,15 +130,14 @@ class AsyncProcess:
         self._stack = AsyncExitStack()
         await self._stack.__aenter__()
 
-        self._scope = aiodrive.use_scope()
-        self._stack.enter_context(self._scope)
-
         async def close_callback1():
             await to_thread_patient(self._process.join)
 
-        self._stack.push_async_callback(close_callback1)
+            if self._process.exitcode != 0:
+                raise RuntimeError(f"Process exited with code {self._process.exitcode}")
 
-        await self._stack.enter_async_context(aiodrive.contextualize(self._loop()))
+        self._stack.push_async_callback(close_callback1)
+        await self._stack.enter_async_context(contextualize(self._loop()))
 
         return self
 
@@ -113,12 +146,12 @@ class AsyncProcess:
 
     async def _loop(self):
         while True:
-            message: FinishTaskMessage = await recv_conn(self._server_conn)
+            message: FinishTaskMessage = await recv_connection(self._server_conn)
 
             future = self._tasks.pop(message.task_id)
             message.state.transfer(future)
 
-    async def spawn[**P, R](self, func: Callable[P, CoroutineType[None, Any, R]], *args: P.args, **kwargs: P.kwargs):
+    async def spawn[**P, R](self, func: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs):
         task_id = self._next_task_id
         self._next_task_id += 1
 
@@ -144,62 +177,32 @@ class AsyncProcess:
                 self._server_conn.send(CancelTaskMessage(task_id=task_id))
 
 
-# class AsyncProcess[**P, T]:
-#     def __init__(self, factory: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> None:
-#         self._factory = factory
-#         self._args = args
-#         self._kwargs = kwargs
+async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs) -> R:
+    """
+    Run an asynchronous function in a separate process.
 
-#     async def __aenter__(self) -> T:
-#         server_conn, client_conn = Pipe()
-#         server_conn.recv()
+    Cancellation is propagated to the function.
 
-#         self._process = Process(
-#             target=process_main,
-#             args=(client_conn, *self._args),
-#             kwargs=self._kwargs,
-#         )
+    Parameters
+    ----------
+    func
+        The asynchronous function to run.
+    args
+        Positional arguments to pass to the function.
+    kwargs
+        Keyword arguments to pass to the function.
 
-#         self._process.start()
+    Returns
+    -------
+    R
+        The result of the function.
+    """
 
-#     async def __aexit__(self, exc_type, exc_val, exc_tb):
-#         self._process.join()
+    async with AsyncProcess() as process:
+        return await process.spawn(func, *args, **kwargs)
 
-# class Math:
-#     def square(self, x: int):
-#         return x * x
 
-async def a(x: float):
-    global state
-
-    if "state" not in globals():
-        state = 0
-
-    print(f"Sleeping {x}")
-    await asyncio.sleep(x)
-
-    state += x
-    print(f"Slept {x} {state}")
-
-    return x
-
-async def main():
-    try:
-        with aiodrive.handle_signal(Signals.SIGINT):
-            async with AsyncProcess() as proc:
-                print(
-                    await aiodrive.gather(
-                        proc.spawn(a, .5),
-                        proc.spawn(a, 1),
-                        proc.spawn(a, 2),
-                    ),
-                )
-    except* aiodrive.SignalHandledException:
-        print("Operation cancelled by user.")
-
-if __name__ == "__main__":
-    # with Pool(processes=4) as pool:
-    #     results = pool.map(square, range(10))
-    #     print(results)
-
-    asyncio.run(main())
+__all__ = [
+    "AsyncProcess",
+    "run_in_process",
+]

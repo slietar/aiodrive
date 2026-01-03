@@ -2,12 +2,14 @@ import asyncio
 import contextlib
 from asyncio import Task
 
+from .event_loop import get_event_loop
+
 
 async def cancel_task(task: Task[object], /):
   """
   Cancel and await the provided task.
 
-  If raised, the `asyncio.CancelledError` exception is suppressed.
+  If raised, the `CancelledError` exception is suppressed.
 
   Parameters
   ----------
@@ -44,7 +46,7 @@ def ensure_correct_cancellation():
   yield
 
   if current_task.cancelling() > initial_cancellation_count:
-    raise asyncio.CancelledError
+    raise asyncio.CancelledError from None
 
 
 class SuppressFailureError(RuntimeError):
@@ -55,7 +57,7 @@ def suppress(*exceptions: type[BaseException], strict: bool = False):
   """
   Suppress the specified exceptions in an asynchronous context.
 
-  Unlike `contextlib.suppress`, this context manager ensures that, if there is a
+  Unlike `contextlib.suppress()`, this context manager ensures that, if there is a
   running event loop and the current task was cancelled while inside the
   context, a `CancelledError` is re-raised upon exiting the context.
 
@@ -72,30 +74,18 @@ def suppress(*exceptions: type[BaseException], strict: bool = False):
     If `strict` is `True` and no exceptions were suppressed.
   """
 
-  try:
-    current_task = asyncio.current_task()
-  except RuntimeError:
-      cancellation_count = None
-  else:
-    if current_task is not None:
-      cancellation_count = current_task.cancelling()
+  with (
+    ensure_correct_cancellation()
+    if get_event_loop() is not None
+    else contextlib.nullcontext()
+  ):
+    try:
+      yield
+    except* exceptions:
+      pass
     else:
-      cancellation_count = None
-
-  try:
-    yield
-  except* exceptions:
-    pass
-  else:
-    if strict:
-      raise SuppressFailureError('No exception to suppress')
-
-  if cancellation_count is not None:
-    current_task = asyncio.current_task()
-    assert current_task is not None
-
-    if current_task.cancelling() > cancellation_count:
-      raise asyncio.CancelledError
+      if strict:
+        raise SuppressFailureError('No exception to suppress')
 
 
 __all__ = [

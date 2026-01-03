@@ -20,6 +20,7 @@ from .modules.latch import *
 from .modules.map import *
 from .modules.nestable_lock import *
 from .modules.prime import *
+from .modules.process import *
 from .modules.race import *
 from .modules.repeat import *
 from .modules.run import *

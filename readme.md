@@ -23,7 +23,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`race()`**<br>Wait for the fastest of a given set of awaitables.
   - **`volatile_task_group()`**<br>Create a task group that automatically terminates when exiting the context.
 - Managing individual awaitables
-  - **`GuaranteedTask`**<br>A variant of `asyncio.Task` that that guarantees that the provided awaitable is awaited before any cancellation occurs.
+  - **`GuaranteedTask`**<br>A variant of `Task` that that guarantees that the provided awaitable is awaited before any cancellation occurs.
   - **`ShieldContext`**<br>A class for shielding awaitables from cancellation based on the cancellation request count at the time of instantiation.
   - **`cancel_task()`**<br>Cancel and await the provided task.
   - **`prime()`**<br>Prime an awaitable such that as much code as possible is executed immediately.
@@ -51,12 +51,18 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`suppress()`**<br>Suppress the specified exceptions in an asynchronous context.
   - **`use_scope()`**<br>Create a context that locally manages the cancellation of the current task.
   - **`using_pending_daemon_handle()`**<br>Decorate the provided function such that it returns a `PendingDaemonHandle`.
+  - **`ensure_correct_cancellation()`**<br>  Ensure that a `CancelledError` is raised if the current task was cancelled while inside the context.
 - Managing the program
   - **`handle_signal()`**<br>Register a signal handler that cancels the current task when the signal is received.
   - **`run()`**<br>Run an awaitable in a new event loop with enforced structured concurrency.
   - **`wait_for_signal()`**<br>Wait for a signal.
+- Working with processes
+  - **`AsyncProcess`**<br>A class for managing asynchronous tasks in a separate process.
+  - **`recv_connection()`**<br>Receive a message from a multiprocessing `Connection`.
+  - **`run_in_process()`**<br>Run an asynchronous function in a separate process.
+  - **`start_process()`**<br>Start a process.
 - Working with threads
-  - **`Latch`**<br>A primitive similar to `asyncio.Event` but that can be awaited for both set and reset occurences.
+  - **`Latch`**<br>A primitive similar to `Event` but that can be awaited for both set and reset occurences.
   - **`ThreadsafeLock`**<br>A lock that can be acquired from different threads.
   - **`ThreadsafeState`**<br>A thread-safe primitive for storing and watching a state.
   <!-- - **`threadsafe_aiter()`**<br>Create an async iterator that can be consumed from a different thread than the one producing items. -->
@@ -77,7 +83,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`get_event_loop()`**<br>Get the current event loop, if any.
   - **`set_event_loop()`**<br>Set the current event loop.
 - Working with I/O events
-  - **`KqueueKqueueEventManager`**<br>Create a context manager for receiving kqueue events.
+  - **`KqueueEventManager`**<br>Create a context manager for receiving kqueue events.
   - **`watch_path()`**<br>Watch a filesystem path.
 - Networking
   - **`TCPServer`**<br>A TCP server.

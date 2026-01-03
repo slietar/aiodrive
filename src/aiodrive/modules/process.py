@@ -1,11 +1,11 @@
 import asyncio
 from asyncio import StreamReader, StreamWriter
 from asyncio.subprocess import Process as AsyncioProcess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from os import PathLike
 from signal import Signals
-from typing import Optional
+from typing import IO, Optional
 
 from .cancel import ensure_correct_cancellation
 
@@ -111,14 +111,21 @@ class Process:
         raise ProcessTerminatedException(code)
 
 
+type FileOp = Optional[IO | int]
+
 async def start_process(
   command: Sequence[str] | str,
   *,
   cwd: Optional[PathLike | str] = None,
-  env: dict[str, str] = {},
+  env: Mapping[str, str] = {},
+  stdin: FileOp = asyncio.subprocess.PIPE,
+  stdout: FileOp = asyncio.subprocess.PIPE,
+  stderr: FileOp = asyncio.subprocess.PIPE,
 ):
   """
   Start a process.
+
+  The process is started in a new session.
 
   Parameters
   ----------
@@ -129,6 +136,12 @@ async def start_process(
     The working directory of the process.
   env
     The environment variables of the process.
+  stdin
+    The operation for the standard input.
+  stdout
+    The operation for the standard output.
+  stderr
+    The operation for the standard error.
 
   Returns
   -------
@@ -140,9 +153,10 @@ async def start_process(
     proc = await asyncio.create_subprocess_shell(
       command,
       env=env,
-      stdin=asyncio.subprocess.PIPE,
-      stdout=asyncio.subprocess.PIPE,
-      stderr=asyncio.subprocess.PIPE,
+      stdin=stdin,
+      stdout=stdout,
+      stderr=stderr,
+      start_new_session=True,
     )
   else:
     proc = await asyncio.create_subprocess_exec(
@@ -150,19 +164,16 @@ async def start_process(
       *command[1:],
       cwd=cwd,
       env=env,
-      stdin=asyncio.subprocess.PIPE,
-      stdout=asyncio.subprocess.PIPE,
-      stderr=asyncio.subprocess.PIPE,
+      stdin=stdin,
+      stdout=stdout,
+      stderr=stderr,
+      start_new_session=True,
     )
 
-  assert proc.stdin is not None
-  assert proc.stdout is not None
-  assert proc.stderr is not None
-
   return Process(
-    stdin=proc.stdin,
-    stdout=proc.stdout,
-    stderr=proc.stderr,
+    stdin=proc.stdin, # type: ignore
+    stdout=proc.stdout, # type: ignore
+    stderr=proc.stderr, # type: ignore
     _proc=proc,
   )
 

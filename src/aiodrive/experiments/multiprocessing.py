@@ -6,15 +6,12 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
+from signal import Signals
 
 from ..modules.contextualize import contextualize
 from ..modules.future_state import FutureState
-from ..modules.shield import shield_wait_forever
-from .to_thread import to_thread_patient
-
-
-async def to_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-    return await shield_wait_forever(asyncio.to_thread(func, *args, **kwargs))
+from ..modules.shield import shield
+from ..modules.thread_sync import to_thread
 
 
 async def recv_connection(conn: Connection, /):
@@ -56,7 +53,6 @@ class CreateTaskMessage:
 class CancelTaskMessage:
     task_id: int
 
-# TODO: Race condition between CancelTaskMessage and FinishTaskMessage
 @dataclass(slots=True)
 class FinishTaskMessage:
     state: FutureState
@@ -68,8 +64,9 @@ def process_main(conn: Connection):
     asyncio.run(process_main_async(conn))
 
 async def process_main_async(conn: Connection):
-    # loop = asyncio.get_running_loop()
-    # loop.add_signal_handler(Signals.SIGINT, lambda: None)
+    # Prevent SIGINT from propagating to the child process
+    loop = asyncio.get_running_loop()
+    loop.add_signal_handler(Signals.SIGINT, lambda: None)
 
     tasks = dict[int, Task]()
 
@@ -92,12 +89,21 @@ async def process_main_async(conn: Connection):
                 task.add_done_callback(lambda task, task_id = message.task_id: task_done_callback(task_id))
                 tasks[message.task_id] = task
             case CancelTaskMessage():
-                tasks[message.task_id].cancel()
+                task = tasks.get(message.task_id)
+
+                # The task may be none if it finished before the cancel message
+                # was processed
+                if task is not None:
+                    task.cancel()
             case _:
                 raise ValueError
 
 
 class AsyncProcess:
+    """
+    A class for managing asynchronous tasks in a separate process.
+    """
+
     async def __aenter__(self):
         self._tasks = dict[int, Future]()
         self._next_task_id = 0
@@ -110,7 +116,7 @@ class AsyncProcess:
         await self._stack.__aenter__()
 
         async def close_callback1():
-            await to_thread_patient(self._process.join)
+            await to_thread(self._process.join)
 
             if self._process.exitcode != 0:
                 raise RuntimeError(f"Process exited with code {self._process.exitcode}")
@@ -131,6 +137,26 @@ class AsyncProcess:
             message.state.transfer(future)
 
     async def spawn[**P, R](self, func: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs):
+        """
+        Spawn an asynchronous function in the separate process.
+
+        Cancellation is propagated to the function.
+
+        Parameters
+        ----------
+        func
+            The asynchronous function to run.
+        *args
+            Positional arguments to pass to the function.
+        **kwargs
+            Keyword arguments to pass to the function.
+
+        Returns
+        -------
+        R
+            The result of the function.
+        """
+
         task_id = self._next_task_id
         self._next_task_id += 1
 
@@ -166,9 +192,9 @@ async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args,
     ----------
     func
         The asynchronous function to run.
-    args
+    *args
         Positional arguments to pass to the function.
-    kwargs
+    **kwargs
         Keyword arguments to pass to the function.
 
     Returns
@@ -183,5 +209,6 @@ async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args,
 
 __all__ = [
     "AsyncProcess",
+    "recv_connection",
     "run_in_process",
 ]

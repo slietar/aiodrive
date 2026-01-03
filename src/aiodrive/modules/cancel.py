@@ -29,6 +29,24 @@ async def cancel_task(task: Task[object], /):
         raise
 
 
+@contextlib.contextmanager
+def ensure_correct_cancellation():
+  """
+  Ensure that a `CancelledError` is raised if the current task was cancelled
+  while inside the context.
+  """
+
+  current_task = asyncio.current_task()
+  assert current_task is not None
+
+  initial_cancellation_count = current_task.cancelling()
+
+  yield
+
+  if current_task.cancelling() > initial_cancellation_count:
+    raise asyncio.CancelledError
+
+
 class SuppressFailureError(RuntimeError):
   pass
 
@@ -83,5 +101,6 @@ def suppress(*exceptions: type[BaseException], strict: bool = False):
 __all__ = [
   'SuppressFailureError',
   'cancel_task',
+  'ensure_correct_cancellation',
   'suppress',
 ]

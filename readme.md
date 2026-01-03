@@ -12,11 +12,6 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 
 ## API
 
-<!-- - **`ThreadTaskGroup`** – A task group that runs tasks in a separate thread. -->
-
-<!-- - **`OrderedQueue`** – A queue similar to `asyncio.Queue` but that lets producers provide items an unordered manner while consumers receive them in the order defined by producers.
-- **`UnorderedQueue`** – A queue similar to `asyncio.Queue` but with the same interface as `OrderedQueue`. -->
-
 - Managing multiple awaitables
   - **`amass()`**<br>Create an asynchronous generator that yields results from awaitables as they complete.
   - **`gather()`**<br>Concurrently collect results from multiple awaitables.
@@ -57,7 +52,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`run()`**<br>Run an awaitable in a new event loop with enforced structured concurrency.
   - **`wait_for_signal()`**<br>Wait for a signal.
 - Working with processes
-  - **`AsyncProcess`**<br>A class for managing asynchronous tasks in a separate process.
+  - **`MultiprocessingProcess`**<br>A class for managing asynchronous tasks in a separate process.
   - **`recv_connection()`**<br>Receive a message from a multiprocessing `Connection`.
   - **`run_in_process()`**<br>Run an asynchronous function in a separate process.
   - **`start_process()`**<br>Start a process.

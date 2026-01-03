@@ -18,6 +18,7 @@ from .modules.guaranteed_task import *
 from .modules.handle import *
 from .modules.latch import *
 from .modules.map import *
+from .modules.multiprocessing import *
 from .modules.nestable_lock import *
 from .modules.prime import *
 from .modules.process import *

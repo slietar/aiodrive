@@ -16,6 +16,10 @@ class ProcessTerminatedException(Exception):
 
 @dataclass(kw_only=True, slots=True)
 class Process:
+  """
+  A class for managing a subprocess.
+  """
+
   stdin: StreamWriter
   stdout: StreamReader
   stderr: StreamReader

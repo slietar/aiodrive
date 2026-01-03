@@ -8,10 +8,10 @@ from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
 from signal import Signals
 
-from ..modules.contextualize import contextualize
-from ..modules.future_state import FutureState
-from ..modules.shield import shield
-from ..modules.thread_sync import to_thread
+from .contextualize import contextualize
+from .future_state import FutureState
+from .shield import shield
+from .thread_sync import to_thread
 
 
 async def recv_connection(conn: Connection, /):
@@ -99,7 +99,7 @@ async def process_main_async(conn: Connection):
                 raise ValueError
 
 
-class AsyncProcess:
+class MultiprocessingProcess:
     """
     A class for managing asynchronous tasks in a separate process.
     """
@@ -203,12 +203,12 @@ async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args,
         The result of the function.
     """
 
-    async with AsyncProcess() as process:
+    async with MultiprocessingProcess() as process:
         return await process.spawn(func, *args, **kwargs)
 
 
 __all__ = [
-    "AsyncProcess",
+    "MultiprocessingProcess",
     "recv_connection",
     "run_in_process",
 ]

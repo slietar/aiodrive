@@ -2,6 +2,8 @@ import asyncio
 from collections.abc import Awaitable, Iterable
 from typing import overload
 
+from ..internal.future import ensure_future
+
 
 @overload
 async def gather(*, sensitive: bool = ...) -> tuple[()]:
@@ -73,7 +75,7 @@ async def gather(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool =
     effective_awaitables: Iterable[Awaitable] = awaitables # type: ignore
 
   cancelled = False
-  tasks = [asyncio.ensure_future(awaitable) for awaitable in effective_awaitables]
+  tasks = [ensure_future(awaitable) for awaitable in effective_awaitables]
 
   if not tasks:
     return ()

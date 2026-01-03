@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from asyncio import Future, Task
+from asyncio import Future
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
@@ -8,6 +8,7 @@ from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
 from signal import Signals
 
+from ..internal.future import ensure_future
 from .contextualize import contextualize
 from .future_state import FutureState
 from .shield import shield
@@ -29,7 +30,7 @@ async def recv_connection(conn: Connection, /):
         The received message.
     """
 
-    job = asyncio.ensure_future(to_thread(conn.recv))
+    job = ensure_future(to_thread(conn.recv))
 
     try:
         return await shield(job)
@@ -68,7 +69,7 @@ async def process_main_async(conn: Connection):
     loop = asyncio.get_running_loop()
     loop.add_signal_handler(Signals.SIGINT, lambda: None)
 
-    tasks = dict[int, Task]()
+    tasks = dict[int, Future]()
 
     def task_done_callback(task_id: int):
         task = tasks.pop(task_id)
@@ -85,7 +86,7 @@ async def process_main_async(conn: Connection):
 
         match message:
             case CreateTaskMessage():
-                task = asyncio.ensure_future(message.target(*message.args, **message.kwargs))
+                task = ensure_future(message.target(*message.args, **message.kwargs))
                 task.add_done_callback(lambda task, task_id = message.task_id: task_done_callback(task_id))
                 tasks[message.task_id] = task
             case CancelTaskMessage():

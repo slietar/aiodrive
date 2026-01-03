@@ -6,6 +6,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Never, Optional
 
+from ..internal.future import ensure_future
 from .cancel import cancel_task
 from .contextualize import contextualize
 from .daemon import ensure_daemon
@@ -30,10 +31,10 @@ class DaemonHandle:
   """
 
   _contextualized: Optional[AbstractAsyncContextManager[None]] = field(default=None, repr=False)
-  _task: Task[Never] = field(repr=False)
+  _task: Future[Never] = field(repr=False)
 
   def __init__(self, awaitable: Awaitable[Never], /):
-    self._task = asyncio.ensure_future(ensure_daemon(awaitable))
+    self._task = ensure_future(ensure_daemon(awaitable))
 
   def __await__(self):
     return self._task.__await__()
@@ -48,7 +49,10 @@ class DaemonHandle:
     return await self._contextualized.__aexit__(exc_type, exc_value, traceback)
 
   async def aclose(self):
-    await cancel_task(self._task)
+    if isinstance(self._task, Task):
+      await cancel_task(self._task)
+    else:
+      self._task.cancel()
 
 
 @dataclass(slots=True)

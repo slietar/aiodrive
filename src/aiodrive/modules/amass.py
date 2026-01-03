@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Iterable
 
+from ..internal.future import ensure_future
 from ..internal.sized import (
   CloseableSizedAsyncIterable,
   sized_aiter,
@@ -42,7 +43,7 @@ def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -
     If an awaitable raises an exception.
   """
 
-  tasks = [asyncio.ensure_future(awaitable) for awaitable in awaitables]
+  tasks = [ensure_future(awaitable) for awaitable in awaitables]
 
   async def generator():
     cancelled = False

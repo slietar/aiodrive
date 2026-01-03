@@ -3,6 +3,7 @@ from asyncio import Future
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 
+from ..internal.future import ensure_future
 from .future_state import FutureState
 
 
@@ -25,7 +26,7 @@ def shield[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
     The future's result.
   """
 
-  inner = asyncio.ensure_future(awaitable)
+  inner = ensure_future(awaitable)
 
   if inner.done():
     return inner
@@ -68,7 +69,7 @@ async def shield_wait[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -
   if shield_count <= 0:
     return await awaitable
 
-  task = asyncio.ensure_future(awaitable)
+  task = ensure_future(awaitable)
 
   for _ in range(shield_count):
     try:
@@ -97,7 +98,7 @@ async def shield_wait_forever[T](awaitable: Awaitable[T], /) -> T:
   """
 
   cancelled = False
-  task = asyncio.ensure_future(awaitable)
+  task = ensure_future(awaitable)
 
   while True:
     try:

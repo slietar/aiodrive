@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Awaitable, Iterable
 from typing import Literal, overload
 
+from ..internal.future import ensure_future
 from .gather import gather
 
 
@@ -65,7 +66,7 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
     effective_awaitables: tuple[Awaitable, ...] = awaitables # type: ignore
 
   assert len(effective_awaitables) >= 1
-  tasks = [asyncio.ensure_future(awaitable) for awaitable in effective_awaitables]
+  tasks = [ensure_future(awaitable) for awaitable in effective_awaitables]
 
   try:
     done_tasks, pending_tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

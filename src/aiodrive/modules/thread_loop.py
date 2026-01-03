@@ -1,9 +1,10 @@
 import asyncio
-from asyncio import Task
+from asyncio import Future
 from collections.abc import Awaitable
 from threading import Thread
 from typing import Literal, Optional
 
+from ..internal.future import ensure_future
 from .bivalent_context_manager import bivalent_context_manager
 from .contextualize import contextualize
 from .future_state import FutureState
@@ -32,7 +33,7 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
 
     result: Optional[FutureState[T]] = None
     stage = ThreadsafeState[Literal["join", "preparing", "running"]]("preparing")
-    task: Optional[Task[T]] = None
+    task: Optional[Future[T]] = None
 
     def thread_main():
         nonlocal result, stage
@@ -45,7 +46,7 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
 
         loop = asyncio.get_running_loop()
 
-        task = asyncio.ensure_future(target)
+        task = ensure_future(target)
         loop.call_soon(stage.set_value, "running")
 
         return await task

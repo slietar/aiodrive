@@ -9,33 +9,12 @@ from multiprocessing.connection import Connection
 
 from ..modules.contextualize import contextualize
 from ..modules.future_state import FutureState
-from ..modules.shield import shield_forever
+from ..modules.shield import shield_wait_forever
 from .to_thread import to_thread_patient
 
 
-def shield[T](inner: Future[T], /):
-    if inner.done():
-        return inner
-
-    outer = Future[T]()
-
-    def inner_callback(_inner: Future[T]):
-        if outer.cancelled():
-            return
-
-        FutureState.absorb_future(inner).transfer(outer)
-
-    def outer_callback(_outer: Future[T]):
-        inner.remove_done_callback(inner_callback)
-
-    inner.add_done_callback(inner_callback)
-    outer.add_done_callback(outer_callback)
-
-    return outer
-
-
 async def to_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-    return await shield_forever(asyncio.to_thread(func, *args, **kwargs))
+    return await shield_wait_forever(asyncio.to_thread(func, *args, **kwargs))
 
 
 async def recv_connection(conn: Connection, /):

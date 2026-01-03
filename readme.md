@@ -28,8 +28,9 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`cancel_task()`**<br>Cancel and await the provided task.
   - **`prime()`**<br>Prime an awaitable such that as much code as possible is executed immediately.
   - **`primed()`**<br>Decorate the given function such that it returns a primed awaitable.
-  - **`shield()`**<br>Shield and await a given awaitable.
-  - **`shield_forever()`**<br>  Shield and await the provided awaitable indefinitely, ignoring all cancellation requests.
+  - **`shield()`**<br>Shield an awaitable from cancellation.
+  - **`shield_wait()`**<br>Shield and await a given awaitable.
+  - **`shield_wait_forever()`**<br>  Shield and await the provided awaitable indefinitely, ignoring all cancellation requests.
 - Managing async iterators
   - **`auto_aclosing()`**<br>Create an async context manager that calls the `aclose` method, if any, on the provided object upon exit.
   - **`auto_closing()`**<br>Create a context manager that calls the `close` method, if any, on the provided object upon exit.

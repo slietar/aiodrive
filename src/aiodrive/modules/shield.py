@@ -1,11 +1,55 @@
 import asyncio
+from asyncio import Future
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 
+from .future_state import FutureState
 
-async def shield[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
+
+def shield[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
   """
-  Shield and await a given awaitable.
+  Shield an awaitable from cancellation.
+
+  This function is identical to `asyncio.shield()` but does not display
+  exceptions raised by the inner future after shielding occured in Python 3.14
+  and later.
+
+  Parameters
+  ----------
+  awaitable
+    The future to shield.
+
+  Returns
+  -------
+  T
+    The future's result.
+  """
+
+  inner = asyncio.ensure_future(awaitable)
+
+  if inner.done():
+    return inner
+
+  outer = Future[T]()
+
+  def inner_callback(_inner: Future[T]):
+    if outer.cancelled():
+      return
+
+    FutureState.absorb_future(inner).transfer(outer)
+
+  def outer_callback(_outer: Future[T]):
+    inner.remove_done_callback(inner_callback)
+
+  inner.add_done_callback(inner_callback)
+  outer.add_done_callback(outer_callback)
+
+  return outer
+
+
+async def shield_wait[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
+  """
+  Shield and await an awaitable.
 
   Parameters
   ----------
@@ -36,10 +80,10 @@ async def shield[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
   return await task
 
 
-async def shield_forever[T](awaitable: Awaitable[T], /) -> T:
+async def shield_wait_forever[T](awaitable: Awaitable[T], /) -> T:
   """
-  Shield and await the provided awaitable indefinitely, ignoring all
-  cancellation requests.
+  Shield and await the an awaitable indefinitely, ignoring all cancellation
+  requests.
 
   Parameters
   ----------
@@ -102,7 +146,7 @@ class ShieldContext:
       The awaitable's result.
     """
 
-    return await shield(
+    return await shield_wait(
       awaitable,
       shield_count=(shield_count - self._initial_cancellation_count),
     )
@@ -111,5 +155,6 @@ class ShieldContext:
 __all__ = [
   'ShieldContext',
   'shield',
-  'shield_forever',
+  'shield_wait',
+  'shield_wait_forever',
 ]

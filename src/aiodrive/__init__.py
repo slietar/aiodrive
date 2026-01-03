@@ -2,6 +2,7 @@
 
 from .modules.aiter import *
 from .modules.amass import *
+from .modules.bivalent_context_manager import *
 from .modules.button import *
 from .modules.cancel import *
 from .modules.checkpoint import *

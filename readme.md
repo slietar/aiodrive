@@ -44,6 +44,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 - Creating context managers
   - **`DaemonHandle`**<br>A class that manages the awaiting and cancellation of a daemon awaitable.
   - **`PendingDaemonHandle`**<br>A class that manages the initialization, awaiting and cancellation of a daemon awaitable.
+  - **`bivalent_context_manager()`**<br>Create a function that returns a context manager which can be used both synchronously and asynchronously.
   - **`cleaned_up()`**<br>Create a context manager that calls the given asynchronous callback when exiting the context.
   - **`concurrent_contexts()`**<br>Run multiple context managers concurrently.
   - **`contextualize()`**<br>Transform an awaitable into an asynchronous context manager.

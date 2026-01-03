@@ -79,6 +79,9 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`set_event_loop()`**<br>Set the current event loop.
 - Working with I/O events
   - **`KqueueEventManager`**<br>Create a context manager for receiving kqueue events.
+  - **`get_reader()`**<br>Get a `StreamReader` for the given file.
+  - **`get_writer()`**<br>Get a `StreamWriter` for the given file.
+  - **`pipe()`**<br>Pipe data from the source to the destination.
   - **`watch_path()`**<br>Watch a filesystem path.
 - Networking
   - **`TCPServer`**<br>A TCP server.

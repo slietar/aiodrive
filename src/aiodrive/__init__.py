@@ -16,6 +16,7 @@ from .modules.future_state import *
 from .modules.gather import *
 from .modules.guaranteed_task import *
 from .modules.handle import *
+from .modules.io import *
 from .modules.latch import *
 from .modules.map import *
 from .modules.multiprocessing import *

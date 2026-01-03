@@ -21,6 +21,7 @@ from .modules.nestable_lock import *
 from .modules.prime import *
 from .modules.race import *
 from .modules.repeat import *
+from .modules.run import *
 from .modules.scope import *
 from .modules.shield import *
 from .modules.signals import *

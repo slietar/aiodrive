@@ -77,9 +77,9 @@ class TCPServer:
 
     Returns
     -------
-    AbstractAsyncContextManager[TCPServer]
-      An async context manager that yields the created TCP server. The server is
-      closed when the context manager exits. This is done in two steps:
+    PendingDaemonHandle[TCPServer]
+      A handle that yields the created TCP server. Closing of the server is done
+      in two steps:
 
       1. The server stops accepting new connections.
       1. Existing connection handlers are cancelled, leading to the closure of

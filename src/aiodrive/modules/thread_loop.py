@@ -4,10 +4,11 @@ from collections.abc import Awaitable
 from threading import Thread
 from typing import Literal, Optional
 
+from .bivalent_context_manager import bivalent_context_manager
 from .contextualize import contextualize
 from .future_state import FutureState
 from .thread_safe_state import ThreadsafeState
-from .thread_sync import double_context_manager, run_in_thread_loop_contextualized_sync
+from .thread_sync import run_in_thread_loop_contextualized_sync
 
 
 async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
@@ -156,7 +157,7 @@ async def run_in_thread_loop_contextualized_async(target: Awaitable[None], /):
         yield
 
 
-run_in_thread_loop_contextualized = double_context_manager(
+run_in_thread_loop_contextualized = bivalent_context_manager(
     run_in_thread_loop_contextualized_sync,
     run_in_thread_loop_contextualized_async,
 )

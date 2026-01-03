@@ -8,12 +8,18 @@ from ..internal.sized import (
 from .gather import gather
 
 
-async def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -> CloseableSizedAsyncIterable[T]:
+# TODO: Add max_concurrent_count
+
+
+def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -> CloseableSizedAsyncIterable[T]:
   """
   Create an asynchronous generator that yields results from awaitables as they
   complete.
 
   It is crucial to close the generator for internal tasks to be cleaned up.
+
+  This function is similar to `asyncio.as_completed()` but provides better
+  cancellation behavior.
 
   Parameters
   ----------

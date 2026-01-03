@@ -65,7 +65,7 @@ class ThreadsafeState[T]:
 
   def wait_until(self, fn: Callable[[T], bool], /):
     """
-    Wait for a state change.
+    Asynchronously wait for a state change.
 
     Parameters
     ----------
@@ -80,6 +80,29 @@ class ThreadsafeState[T]:
     """
 
     return self._observe(fn)
+
+  def wait_until_sync(self, fn: Callable[[T], bool], /):
+    """
+    Synchronously wait for a state change.
+
+    Parameters
+    ----------
+    fn
+      A function that takes the current state value and returns `True` if the
+      wait should end.
+
+    Returns
+    -------
+    T
+      The state value on which `fn` returned `True`.
+    """
+
+    with self._condition:
+      while not fn(self.value):
+        self._condition.wait()
+
+      # Not the same as returning at the top level of the function
+      return self.value
 
   async def _observe(self, fn: Callable[[T], bool], /):
     loop = asyncio.get_running_loop()

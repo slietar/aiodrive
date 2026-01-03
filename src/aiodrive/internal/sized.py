@@ -38,18 +38,3 @@ class sized_aiter[T]:
 
     def __aiter__(self):
         return self._aiterable.__aiter__()
-
-
-# class sized_iter[T]:
-#     _iterable: Iterable[T]
-#     length: int
-
-#     def __iter__(self):
-#         return iter(self._iterable)
-
-#     def __len__(self):
-#         return self.length
-
-#     def close(self):
-#         if inspect.isgenerator(self._iterable):
-#             self._iterable.close()

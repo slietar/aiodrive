@@ -1,10 +1,12 @@
 import asyncio
 import contextlib
 import functools
+import itertools
 import signal
 from asyncio import Event, Future
-from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Sequence
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from signal import Signals as SignalCode
 from typing import Optional
 
@@ -16,8 +18,19 @@ class SignalHandledException(Exception):
     signal: signal.Signals
 
 
+counter = itertools.count(start=1)
+SIGNAL_LISTENING_VAR = ContextVar[list[int]]('SIGNAL_LISTENING_VAR', default=[0])
+
+@dataclass(slots=True)
+class ListeningInfo:
+    callbacks: dict[int, Callable] = field(default_factory=dict)
+    target_ids: set[int] = field(default_factory=set)
+
+signal_listeners = dict[SignalCode, ListeningInfo]()
+
+
 @contextlib.contextmanager
-def handle_signal(signal_code: Sequence[SignalCode] | SignalCode, /) -> Iterator[None]:
+def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iterator[None]:
     """
     Handle specified signals by cancelling the current task.
 
@@ -36,7 +49,7 @@ def handle_signal(signal_code: Sequence[SignalCode] | SignalCode, /) -> Iterator
 
     Parameters
     ----------
-    signal_code
+    raw_signal_code
         The signal code or codes to handle e.g. `signal.Signals.SIGINT`.
 
     Raises
@@ -47,35 +60,68 @@ def handle_signal(signal_code: Sequence[SignalCode] | SignalCode, /) -> Iterator
         code.
     """
 
-    if isinstance(signal_code, Sequence):
-        signal_codes = list(signal_code)
+    if isinstance(raw_signal_code, Sequence):
+        signal_codes = list(raw_signal_code)
     else:
-        signal_codes = [signal_code]
+        signal_codes = [raw_signal_code]
 
     loop = asyncio.get_running_loop()
+
+    ancestor_ids = SIGNAL_LISTENING_VAR.get()
+    self_id = counter.__next__()
+
+    SIGNAL_LISTENING_VAR.set([*ancestor_ids, self_id])
 
     exited = False
     handled_signal_code: Optional[SignalCode] = None
 
-    def callback(rec_signal_code: SignalCode):
+    def callback(signal_code: SignalCode):
         nonlocal handled_signal_code
 
         # Store the last handled signal code
-        handled_signal_code = rec_signal_code
+        handled_signal_code = signal_code
 
         if not exited:
             scope.cancel()
 
-    for rec_signal_code in signal_codes:
-        loop.add_signal_handler(rec_signal_code, functools.partial(callback, rec_signal_code))
+    def signal_handler(signal_code: SignalCode):
+        listening_info = signal_listeners[signal_code]
 
-    with use_scope() as scope:
-        try:
+        for target_id in listening_info.target_ids:
+            listening_info.callbacks[target_id]()
+
+    for signal_code in signal_codes:
+        if signal_code not in signal_listeners:
+            signal_listeners[signal_code] = ListeningInfo()
+
+            loop.add_signal_handler(
+                signal_code,
+                functools.partial(signal_handler, signal_code),
+            )
+
+        listening_info = signal_listeners[signal_code]
+        listening_info.target_ids -= set(ancestor_ids)
+        listening_info.target_ids.add(self_id)
+        listening_info.callbacks[self_id] = functools.partial(callback, signal_code)
+
+
+    try:
+        with use_scope() as scope:
             yield
-        finally:
-            for rec_signal_code in signal_codes:
-                loop.remove_signal_handler(rec_signal_code)
-                exited = True
+    finally:
+        SIGNAL_LISTENING_VAR.set(ancestor_ids)
+
+        for signal_code in signal_codes:
+            listening_info = signal_listeners[signal_code]
+
+            del listening_info.callbacks[self_id]
+            listening_info.target_ids.remove(self_id)
+
+            if not listening_info.target_ids:
+                del signal_listeners[signal_code]
+                loop.remove_signal_handler(signal_code)
+
+        exited = True
 
     if handled_signal_code is not None:
         raise SignalHandledException(handled_signal_code)

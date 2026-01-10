@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from signal import Signals as SignalCode
-from typing import Optional
+from typing import NewType, Optional, cast
 
 from .scope import use_scope
 
@@ -18,15 +18,17 @@ class SignalHandledException(Exception):
     signal: signal.Signals
 
 
-counter = itertools.count(start=1)
-SIGNAL_LISTENING_VAR = ContextVar[list[int]]('SIGNAL_LISTENING_VAR', default=[0])
+ListenerId = NewType("ListenerId", int)
+
+SIGNAL_LISTENING_VAR = ContextVar[list[ListenerId]]("SIGNAL_LISTENING_VAR", default=[cast(ListenerId, 0)])
 
 @dataclass(slots=True)
-class ListeningInfo:
-    callbacks: dict[int, Callable] = field(default_factory=dict)
-    target_ids: set[int] = field(default_factory=set)
+class ListenerInfo:
+    callback: Callable
+    descendant_count: int
 
-signal_listeners = dict[SignalCode, ListeningInfo]()
+listener_id_counter = itertools.count(start=1)
+signal_listeners = dict[SignalCode, dict[ListenerId, ListenerInfo]]()
 
 
 @contextlib.contextmanager
@@ -68,7 +70,7 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
     loop = asyncio.get_running_loop()
 
     ancestor_ids = SIGNAL_LISTENING_VAR.get()
-    self_id = counter.__next__()
+    self_id = ListenerId(listener_id_counter.__next__())
 
     SIGNAL_LISTENING_VAR.set([*ancestor_ids, self_id])
 
@@ -85,25 +87,27 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
             scope.cancel()
 
     def signal_handler(signal_code: SignalCode):
-        listening_info = signal_listeners[signal_code]
-
-        for target_id in listening_info.target_ids:
-            listening_info.callbacks[target_id]()
+        for listener_info in signal_listeners[signal_code].values():
+            if listener_info.descendant_count == 0:
+                listener_info.callback()
 
     for signal_code in signal_codes:
         if signal_code not in signal_listeners:
-            signal_listeners[signal_code] = ListeningInfo()
+            signal_listeners[signal_code] = {}
 
             loop.add_signal_handler(
                 signal_code,
                 functools.partial(signal_handler, signal_code),
             )
 
-        listening_info = signal_listeners[signal_code]
-        listening_info.target_ids -= set(ancestor_ids)
-        listening_info.target_ids.add(self_id)
-        listening_info.callbacks[self_id] = functools.partial(callback, signal_code)
+        signal_listeners[signal_code][self_id] = ListenerInfo(
+            callback=functools.partial(callback, signal_code),
+            descendant_count=0,
+        )
 
+        for ancestor_id in ancestor_ids:
+            if (ancestor_info := signal_listeners[signal_code].get(ancestor_id)) is not None:
+                ancestor_info.descendant_count += 1
 
     try:
         with use_scope() as scope:
@@ -112,14 +116,17 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
         SIGNAL_LISTENING_VAR.set(ancestor_ids)
 
         for signal_code in signal_codes:
-            listening_info = signal_listeners[signal_code]
+            x_signal_listeners = signal_listeners[signal_code]
 
-            del listening_info.callbacks[self_id]
-            listening_info.target_ids.remove(self_id)
+            del x_signal_listeners[self_id]
 
-            if not listening_info.target_ids:
+            if not x_signal_listeners:
                 del signal_listeners[signal_code]
                 loop.remove_signal_handler(signal_code)
+            else:
+                for ancestor_id in ancestor_ids:
+                    if (ancestor_info := x_signal_listeners.get(ancestor_id)) is not None:
+                        ancestor_info.descendant_count -= 1
 
         exited = True
 
@@ -208,8 +215,8 @@ async def watch_signal(signal_code: Sequence[SignalCode] | SignalCode, /):
 
 
 __all__ = [
-    'SignalHandledException',
-    'handle_signal',
-    'wait_for_signal',
-    'watch_signal',
+    "SignalHandledException",
+    "handle_signal",
+    "wait_for_signal",
+    "watch_signal",
 ]

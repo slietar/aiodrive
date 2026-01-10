@@ -52,7 +52,7 @@ def handle_signal(signal_code: Sequence[SignalCode] | SignalCode, /) -> Iterator
     else:
         signal_codes = [signal_code]
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     exited = False
     handled_signal_code: Optional[SignalCode] = None
@@ -99,7 +99,7 @@ async def wait_for_signal(signal_code: Sequence[SignalCode] | SignalCode, /):
     else:
         signal_codes = [signal_code]
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     future = Future[None]()
 
     def handler():
@@ -144,7 +144,7 @@ async def watch_signal(signal_code: Sequence[SignalCode] | SignalCode, /):
     else:
         signal_codes = [signal_code]
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     event = Event()
 
     for rec_signal_code in signal_codes:

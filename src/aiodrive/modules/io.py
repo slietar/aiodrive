@@ -21,7 +21,7 @@ async def get_reader(file: IO[bytes], /):
   reader = StreamReader()
   protocol = StreamReaderProtocol(reader)
 
-  loop = asyncio.get_event_loop()
+  loop = asyncio.get_running_loop()
   await loop.connect_read_pipe(lambda: protocol, file)
 
   return reader
@@ -41,7 +41,7 @@ async def get_writer(file: IO[bytes], /):
   StreamWriter
   """
 
-  loop = asyncio.get_event_loop()
+  loop = asyncio.get_running_loop()
   transport, protocol = await loop.connect_write_pipe(FlowControlMixin, file)
 
   return StreamWriter(transport, protocol, None, loop)

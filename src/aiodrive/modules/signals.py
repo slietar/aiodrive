@@ -6,9 +6,9 @@ import signal
 from asyncio import Event, Future
 from collections.abc import Callable, Iterator, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from signal import Signals as SignalCode
-from typing import NewType, Optional, cast
+from typing import NewType, Optional
 
 from .scope import use_scope
 
@@ -20,15 +20,14 @@ class SignalHandledException(Exception):
 
 ListenerId = NewType("ListenerId", int)
 
-SIGNAL_LISTENING_VAR = ContextVar[list[ListenerId]]("SIGNAL_LISTENING_VAR", default=[cast(ListenerId, 0)])
-
 @dataclass(slots=True)
 class ListenerInfo:
-    callback: Callable
-    descendant_count: int
+    callback: Callable[[], None]
+    child_count: int = 0
 
-listener_id_counter = itertools.count(start=1)
-signal_listeners = dict[SignalCode, dict[ListenerId, ListenerInfo]]()
+LISTENER_ID_COUNTER = itertools.count()
+LISTENERS_BY_SIGNAL_CODE = dict[SignalCode, dict[ListenerId, ListenerInfo]]()
+LISTENER_PARENT_IDS_BY_SIGNAL_CODE = ContextVar[dict[SignalCode, ListenerId]]("LISTENER_PARENT_IDS_BY_SIGNAL_CODE", default={})
 
 
 @contextlib.contextmanager
@@ -46,8 +45,11 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
     blocking, the current task is not cancelled but the exception is still
     raised.
 
-    No other signal listeners for the same codes may be registered for the
-    current event loop.
+    If contexts returned by this function are nested, only the innermost
+    contexts raises the `SignalHandledException` upon exiting the context.
+
+    Apart from other calls to this function, no other signal listeners for the
+    same codes may be registered for the current event loop.
 
     Parameters
     ----------
@@ -69,10 +71,8 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
 
     loop = asyncio.get_running_loop()
 
-    ancestor_ids = SIGNAL_LISTENING_VAR.get()
-    self_id = ListenerId(listener_id_counter.__next__())
-
-    SIGNAL_LISTENING_VAR.set([*ancestor_ids, self_id])
+    parent_ids = LISTENER_PARENT_IDS_BY_SIGNAL_CODE.get()
+    self_id = ListenerId(LISTENER_ID_COUNTER.__next__())
 
     exited = False
     handled_signal_code: Optional[SignalCode] = None
@@ -87,46 +87,50 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
             scope.cancel()
 
     def signal_handler(signal_code: SignalCode):
-        for listener_info in signal_listeners[signal_code].values():
-            if listener_info.descendant_count == 0:
+        for listener_info in LISTENERS_BY_SIGNAL_CODE[signal_code].values():
+            if listener_info.child_count == 0:
                 listener_info.callback()
 
     for signal_code in signal_codes:
-        if signal_code not in signal_listeners:
-            signal_listeners[signal_code] = {}
+        parent_id = parent_ids.get(signal_code)
+        signal_listeners = LISTENERS_BY_SIGNAL_CODE.get(signal_code)
+
+        if signal_listeners is None:
+            signal_listeners = {}
+            LISTENERS_BY_SIGNAL_CODE[signal_code] = signal_listeners
 
             loop.add_signal_handler(
                 signal_code,
                 functools.partial(signal_handler, signal_code),
             )
 
-        signal_listeners[signal_code][self_id] = ListenerInfo(
+        signal_listeners[self_id] = ListenerInfo(
             callback=functools.partial(callback, signal_code),
-            descendant_count=0,
         )
 
-        for ancestor_id in ancestor_ids:
-            if (ancestor_info := signal_listeners[signal_code].get(ancestor_id)) is not None:
-                ancestor_info.descendant_count += 1
+        if parent_id is not None:
+            signal_listeners[parent_id].child_count += 1
+
+    LISTENER_PARENT_IDS_BY_SIGNAL_CODE.set(
+        parent_ids | { signal_code: self_id for signal_code in signal_codes },
+    )
 
     try:
         with use_scope() as scope:
             yield
     finally:
-        SIGNAL_LISTENING_VAR.set(ancestor_ids)
+        LISTENER_PARENT_IDS_BY_SIGNAL_CODE.set(parent_ids)
 
         for signal_code in signal_codes:
-            x_signal_listeners = signal_listeners[signal_code]
+            signal_listeners = LISTENERS_BY_SIGNAL_CODE[signal_code]
 
-            del x_signal_listeners[self_id]
+            del signal_listeners[self_id]
 
-            if not x_signal_listeners:
-                del signal_listeners[signal_code]
+            if not signal_listeners:
+                del LISTENERS_BY_SIGNAL_CODE[signal_code]
                 loop.remove_signal_handler(signal_code)
             else:
-                for ancestor_id in ancestor_ids:
-                    if (ancestor_info := x_signal_listeners.get(ancestor_id)) is not None:
-                        ancestor_info.descendant_count -= 1
+                signal_listeners[parent_ids[signal_code]].child_count -= 1
 
         exited = True
 

@@ -12,12 +12,18 @@ class ThreadsafeLock:
   _sync_lock: ThreadingLock = field(default_factory=ThreadingLock, init=False, repr=False)
 
   def __enter__(self):
-    asyncio.run(self.__aenter__())
+    asyncio.run(self.acquire())
 
   def __exit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
-    asyncio.run(self.__aexit__(exc_type, exc_value, traceback))
+    self.release()
 
   async def __aenter__(self):
+    await self.acquire()
+
+  async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
+    self.release()
+
+  async def acquire(self):
     with self._sync_lock:
       if not self._locked:
         self._locked = True
@@ -29,7 +35,7 @@ class ThreadsafeLock:
     # We purposefully let the future potentially be cancelled
     await future
 
-  async def __aexit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
+  def release(self):
     with self._sync_lock:
       while self._futures:
         future = self._futures.popleft()
@@ -47,6 +53,40 @@ class ThreadsafeLock:
         self._locked = False
 
 
+@dataclass(slots=True)
+class ThreadsafeCondition:
+  lock: ThreadsafeLock = field(default_factory=ThreadsafeLock, init=False, repr=False)
+  _waiters: set[Future[None]] = field(default_factory=set, init=False, repr=False)
+
+  def notify(self):
+    for waiter in list(self._waiters):
+      if not waiter.cancelled():
+        try:
+          waiter.get_loop().call_soon_threadsafe(waiter.set_result, None)
+        except RuntimeError:
+          pass
+
+    self._waiters.clear()
+
+  async def wait(self):
+    self.lock.release()
+
+    future = Future[None]()
+    self._waiters.add(future)
+
+    try:
+      await future
+    finally:
+      await self.lock.acquire()
+
+  async def __aenter__(self):
+    await self.lock.acquire()
+
+  async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ANN001
+    self.lock.release()
+
+
 __all__ = [
+  'ThreadsafeCondition',
   'ThreadsafeLock',
 ]

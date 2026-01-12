@@ -1,8 +1,6 @@
-import asyncio
 from asyncio import Future
 from collections import deque
 from dataclasses import dataclass, field
-from threading import Condition as ThreadingCondition
 from threading import Lock as ThreadingLock
 
 
@@ -78,17 +76,34 @@ class ThreadsafeLock:
 @dataclass(slots=True)
 class ThreadsafeCondition:
   lock: ThreadsafeLock = field(default_factory=ThreadsafeLock, init=False, repr=False)
-  _waiters: set[Future[None]] = field(default_factory=set, init=False, repr=False)
+  _waiters: set[Future[None] | ThreadingLock] = field(default_factory=set, init=False, repr=False)
 
   def notify(self):
+    # The lock must be acquired here
+
     for waiter in list(self._waiters):
-      if not waiter.cancelled():
-        try:
-          waiter.get_loop().call_soon_threadsafe(waiter.set_result, None)
-        except RuntimeError:
-          pass
+      if isinstance(waiter, ThreadingLock):
+        waiter.release()
+      else:
+        if not waiter.cancelled():
+          try:
+            waiter.get_loop().call_soon_threadsafe(waiter.set_result, None)
+          except RuntimeError:
+            pass
 
     self._waiters.clear()
+
+  def wait_sync(self):
+    self.lock.release_sync()
+
+    waiter = ThreadingLock()
+    waiter.acquire()
+    self._waiters.add(waiter)
+
+    try:
+      waiter.acquire()
+    finally:
+      self.lock.acquire_sync()
 
   async def wait(self):
     self.lock.release_async()
@@ -106,6 +121,12 @@ class ThreadsafeCondition:
 
   async def __aexit__(self, exc_type, exc_val, exc_tb):  # noqa: ANN001
     self.lock.release_async()
+
+  def __enter__(self):
+    self.lock.acquire_sync()
+
+  def __exit__(self, exc_type, exc_value, traceback):  # noqa: ANN001
+    self.lock.release_sync()
 
 
 __all__ = [

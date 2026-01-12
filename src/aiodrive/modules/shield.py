@@ -69,16 +69,23 @@ async def shield_wait[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -
   if shield_count <= 0:
     return await awaitable
 
+  cancelled = False
   task = ensure_future(awaitable)
 
   for _ in range(shield_count):
     try:
-      return await asyncio.shield(task)
+      result = await shield(task)
     except asyncio.CancelledError:
-      await task
-      raise
+      cancelled = True
+    else:
+      break
+  else:
+    result = await task
 
-  return await task
+  if cancelled:
+    raise asyncio.CancelledError
+
+  return result
 
 
 async def shield_wait_forever[T](awaitable: Awaitable[T], /) -> T:
@@ -102,15 +109,16 @@ async def shield_wait_forever[T](awaitable: Awaitable[T], /) -> T:
 
   while True:
     try:
-      result = await asyncio.shield(task)
+      result = await shield(task)
     except asyncio.CancelledError:
       cancelled = True
-      continue
+    else:
+      break
 
-    if cancelled:
-      raise asyncio.CancelledError
+  if cancelled:
+    raise asyncio.CancelledError
 
-    return result
+  return result
 
 
 @dataclass(slots=True)

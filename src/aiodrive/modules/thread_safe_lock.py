@@ -3,15 +3,17 @@ from collections import deque
 from dataclasses import dataclass, field
 from threading import Lock as ThreadingLock
 
+from .shield import ShieldContext
+
 
 @dataclass(slots=True)
 class ThreadsafeLock:
   _locked: bool = field(default=False, init=False, repr=False)
   _waiters: deque[Future[None]] = field(default_factory=deque, init=False, repr=False)
 
-  # _waiters_lock: ThreadingCondition = field(default_factory=ThreadingCondition, init=False, repr=False)
   _state_lock: ThreadingLock = field(default_factory=ThreadingLock, init=False, repr=False)
   _sync_lock: ThreadingLock = field(default_factory=ThreadingLock, init=False, repr=False)
+  _sync_waiter_count: int = field(default=0, init=False, repr=False)
 
 
   def __enter__(self):
@@ -21,15 +23,19 @@ class ThreadsafeLock:
     self.release_sync()
 
   def acquire_sync(self):
-    while True:
-      self._sync_lock.acquire()
+    with self._state_lock:
+      if not self._locked:
+        self._sync_lock.acquire()
+        self._locked = True
+        return
 
-      with self._state_lock:
-        if not self._locked:
-          self._locked = True
-          break
+      self._sync_waiter_count += 1
 
-        self._sync_lock.release()
+    self._sync_lock.acquire()
+
+    with self._state_lock:
+      self._sync_waiter_count -= 1
+
 
   def release_sync(self):
     self.release_async()
@@ -69,7 +75,9 @@ class ThreadsafeLock:
 
         break
       else:
-        self._locked = False
+        if self._sync_waiter_count == 0:
+          self._locked = False
+
         self._sync_lock.release()
 
 
@@ -111,10 +119,13 @@ class ThreadsafeCondition:
     future = Future[None]()
     self._waiters.add(future)
 
+    context = ShieldContext()
+    # from .shield import shield
+
     try:
       await future
     finally:
-      await self.lock.acquire_async()
+      await context.shield(self.lock.acquire_async())
 
   async def __aenter__(self):
     await self.lock.acquire_async()

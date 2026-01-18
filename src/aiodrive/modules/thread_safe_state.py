@@ -26,9 +26,25 @@ class ThreadsafeState[T]:
       The new state value.
     """
 
+    self.update_value(lambda _old_value: value)
+
+  def update_value(self, fn: Callable[[T], T], /):
+    """
+    Update the state value using a function and wake up all registered waiters
+    if it changed.
+
+    Parameters
+    ----------
+    fn
+      A function that takes the current state value and returns the new state
+      value.
+    """
+
     with self._condition:
-      if self.value != value:
-        self.value = value
+      new_value = fn(self.value)
+
+      if self.value != new_value:
+        self.value = new_value
 
         self._condition.notify_all()
 

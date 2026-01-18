@@ -58,16 +58,19 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`start_process()`**<br>Start a process.
 - Working with threads
   - **`Latch`**<br>A primitive similar to `Event` but that can be awaited for both set and reset occurences.
+  - **`ThreadManager`**<br>A class for managing the execution of awaitables in a separate thread that has its own event loop.
   - **`ThreadsafeCondition`**<br>A thread-safe condition.
   - **`ThreadsafeLock`**<br>A thread-safe lock.
   - **`ThreadsafeState`**<br>A thread-safe primitive for storing and watching a state.
   <!-- - **`threadsafe_aiter()`**<br>Create an async iterator that can be consumed from a different thread than the one producing items. -->
   <!-- - **`threadsafe_agen()`**<br>Create an async generator that can be consumed from a different thread than the one producing items. -->
-  - **`launch_in_thread_loop()`**<br>Launch an awaitable in a separate thread with its own event loop.
   - **`launch_in_thread_loop_sync()`**<br>Launch an awaitable in a separate thread with its own event loop.
-  - **`run_in_thread_loop()`**<br>Run an awaitable in a separate thread with its own event loop.
-  - **`run_in_thread_loop_sync()`**<br>Run an awaitable in a separate thread with its own event loop.
+  - **`launch_in_thread_loop()`**<br>Launch an awaitable in a separate thread with its own event loop.
+  - **`run_async()`**<br>Synchronously run an awaitable.
   - **`run_in_thread_loop_contextualized()`**<br>Run an awaitable in a separate thread with its own event loop, using a context manager.
+  - **`run_in_thread_loop_sync()`**<br>Run an awaitable in a separate thread with its own event loop.
+  - **`run_in_thread_loop()`**<br>Run an awaitable in a separate thread with its own event loop.
+  - **`to_thread()`**<br>Run a function in a separate thread.
 - Creating awaitables
   - **`checkpoint()`**<br>Check that the current task was not cancelled.
   - **`repeat_periodically()`**<br>Create an iterator that yields periodically.

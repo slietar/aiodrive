@@ -3,27 +3,21 @@ from asyncio import Future, TaskGroup
 from collections.abc import Awaitable
 
 from .awaitable import wait_forever
-from .event_loop import get_event_loop
 from .future_state import FutureState
 from .thread_loop import run_in_thread_loop_contextualized
-from .thread_safe_lock import ThreadsafeLock
-
-
-# def run_async(awaitable: Awaitable[T], /):
-#     if get_event_loop() is not None:
-#         return run_in_thread_loop_sync(awaitable)
-#     else:
-#         return asyncio.run(run_in_thread_loop(awaitable))
 
 
 class ThreadManager:
     """
-    A manager for running awaitables in a persistent separate thread with its
-    own event loop.
+    A class for managing the execution of awaitables in a separate thread that
+    has its own event loop.
     """
 
-    async def _create[T](self, awaitable: Awaitable[T], future: Future[T]):
-        (await FutureState.absorb_awaitable(awaitable)).transfer(future)
+    def _create[T](self, awaitable: Awaitable[T], future: Future[T]):
+        async def create_task():
+            (await FutureState.absorb_awaitable(awaitable)).transfer_threadsafe(future)
+
+        self._group.create_task(create_task())
 
     async def _main(self):
         self._thread_loop = asyncio.get_running_loop()
@@ -34,6 +28,8 @@ class ThreadManager:
     def spawn_sync[T](self, awaitable: Awaitable[T], /):
         """
         Spawn an awaitable in the thread manager's event loop.
+
+        This method may only be called if there is no running event loop.
 
         Parameters
         ----------
@@ -46,24 +42,7 @@ class ThreadManager:
             The result of the provided awaitable.
         """
 
-        if get_event_loop() is None:
-            return asyncio.run(self.spawn(awaitable))
-
-        lock = ThreadsafeLock()
-        lock.acquire_sync()
-
-        future = Future[T]()
-        future.add_done_callback(lambda f: lock.release_sync())
-
-        self._thread_loop.call_soon_threadsafe(
-            self._create,
-            awaitable,
-            future,
-        )
-
-        lock.acquire_sync()
-
-        return FutureState.absorb_future(future).apply()
+        return asyncio.run(self.spawn(awaitable))
 
     async def spawn[T](self, awaitable: Awaitable[T], /):
         """

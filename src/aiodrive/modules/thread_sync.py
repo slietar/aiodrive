@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 from ..internal.future import ensure_future
 from .cancel import suppress
+from .event_loop import get_event_loop
 from .future_state import FutureState
 from .shield import shield_wait_forever
 from .thread_safe_state import ThreadsafeState
@@ -55,17 +56,19 @@ def launch_in_thread_loop_sync[T](target: Awaitable[T], /):
 
   stage.wait_until_sync(lambda value: value == "running")
 
-  def finish():
-    assert result is not None
+  def finish(cancel: bool):
     assert task is not None
 
-    try:
-      task.get_loop().call_soon_threadsafe(task.cancel)
-    except RuntimeError:
-      pass
+    if cancel:
+      try:
+        task.get_loop().call_soon_threadsafe(task.cancel)
+      except RuntimeError:
+        pass
 
     stage.wait_until_sync(lambda value: value == "join")
     thread.join()
+
+    assert result is not None
 
     with suppress(asyncio.CancelledError):
       return result.apply()
@@ -90,7 +93,7 @@ def run_in_thread_loop_sync[T](target: Awaitable[T], /):
     The result of the provided awaitable.
   """
 
-  return launch_in_thread_loop_sync(target)()
+  return launch_in_thread_loop_sync(target)(cancel=False)
 
 
 # Not public
@@ -105,13 +108,13 @@ def run_in_thread_loop_contextualized_sync[T](target: Awaitable[T], /):
   Parameters
   ----------
   target
-      The awaitable to run in a separate thread. Its return value is discarded.
+    The awaitable to run in a separate thread. Its return value is discarded.
 
   Returns
   -------
   AbstractAsyncContextManager[None]
-      An async context manager which runs the provided awaitable in a separate
-      thread.
+    An async context manager which runs the provided awaitable in a separate
+    thread.
   """
 
   finish = launch_in_thread_loop_sync(target)
@@ -119,7 +122,34 @@ def run_in_thread_loop_contextualized_sync[T](target: Awaitable[T], /):
   try:
     yield
   finally:
-    finish()
+    finish(cancel=True)
+
+
+def run_async[T](awaitable: Awaitable[T], /):
+  """
+  Synchronously run an awaitable.
+
+  If there is already an event loop running in the current thread, the awaitable
+  is run in a separate thread. Otherwise, it is run in the current thread.
+
+  Parameters
+  ----------
+  awaitable
+    The awaitable to run.
+
+  Returns
+  -------
+  T
+    The result of the awaitable.
+  """
+
+  # Avoid circular import
+  from .thread_loop import run_in_thread_loop
+
+  if get_event_loop() is not None:
+    return run_in_thread_loop_sync(awaitable)
+  else:
+    return asyncio.run(run_in_thread_loop(awaitable))
 
 
 async def to_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
@@ -149,6 +179,7 @@ async def to_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.
 
 __all__ = [
   'launch_in_thread_loop_sync',
+  'run_async',
   'run_in_thread_loop_sync',
   'to_thread',
 ]

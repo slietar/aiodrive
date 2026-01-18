@@ -32,6 +32,7 @@ from .modules.signals import *
 from .modules.task_group import *
 from .modules.tcp import *
 from .modules.thread_loop import *
+from .modules.thread_manager import *
 from .modules.thread_safe_lock import *
 from .modules.thread_safe_state import *
 from .modules.thread_sync import *

@@ -8,6 +8,10 @@ from .shield import ShieldContext
 
 @dataclass(slots=True)
 class ThreadsafeLock:
+  """
+  A thread-safe lock.
+  """
+
   _locked: bool = field(default=False, init=False, repr=False)
   _waiters: deque[Future[None]] = field(default_factory=deque, init=False, repr=False)
 
@@ -35,7 +39,6 @@ class ThreadsafeLock:
 
     with self._state_lock:
       self._sync_waiter_count -= 1
-
 
   def release_sync(self):
     self.release_async()
@@ -83,6 +86,10 @@ class ThreadsafeLock:
 
 @dataclass(slots=True)
 class ThreadsafeCondition:
+  """
+  A thread-safe condition.
+  """
+
   lock: ThreadsafeLock = field(default_factory=ThreadsafeLock, init=False, repr=False)
   _waiters: set[Future[None] | ThreadingLock] = field(default_factory=set, init=False, repr=False)
 

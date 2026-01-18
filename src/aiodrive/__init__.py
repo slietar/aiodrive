@@ -34,4 +34,5 @@ from .modules.tcp import *
 from .modules.thread_loop import *
 from .modules.thread_safe_lock import *
 from .modules.thread_safe_state import *
+from .modules.thread_sync import *
 from .modules.zip import *

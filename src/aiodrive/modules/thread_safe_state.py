@@ -8,7 +8,7 @@ from threading import Condition, Lock
 @dataclass(slots=True)
 class ThreadsafeState[T]:
   """
-  A thread-safe class for storing state that can be waited on.
+  A thread-safe primitive for storing and watching a state.
   """
 
   value: T

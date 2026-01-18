@@ -58,7 +58,8 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`start_process()`**<br>Start a process.
 - Working with threads
   - **`Latch`**<br>A primitive similar to `Event` but that can be awaited for both set and reset occurences.
-  - **`ThreadsafeLock`**<br>A lock that can be acquired from different threads.
+  - **`ThreadsafeCondition`**<br>A thread-safe condition.
+  - **`ThreadsafeLock`**<br>A thread-safe lock.
   - **`ThreadsafeState`**<br>A thread-safe primitive for storing and watching a state.
   <!-- - **`threadsafe_aiter()`**<br>Create an async iterator that can be consumed from a different thread than the one producing items. -->
   <!-- - **`threadsafe_agen()`**<br>Create an async generator that can be consumed from a different thread than the one producing items. -->

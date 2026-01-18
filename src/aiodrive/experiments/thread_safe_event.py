@@ -9,7 +9,7 @@ from ..modules.thread_safe_state import ThreadsafeState
 @dataclass(slots=True)
 class ThreadsafeEvent:
   _state: ThreadsafeState = field(
-    default_factory=(lambda: ThreadsafeState(0)),
+    default_factory=(lambda: ThreadsafeState(False)),
     init=False,
     repr=False,
   )

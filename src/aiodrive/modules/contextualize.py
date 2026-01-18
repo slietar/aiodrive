@@ -18,9 +18,6 @@ async def contextualize(awaitable: Awaitable[None], /):
   the current and background tasks raise an exception, the exceptions are
   aggregated into an `ExceptionGroup`.
 
-  Exceptions are reported in a `BaseExceptionGroup` only if both the background
-  task and the current task raised exceptions.
-
   Parameters
   ----------
   awaitable

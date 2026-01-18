@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 from asyncio import Future
 from collections.abc import Awaitable
 from threading import Thread
@@ -8,11 +9,12 @@ from ..internal.future import ensure_future
 from .bivalent_context_manager import bivalent_context_manager
 from .contextualize import contextualize
 from .future_state import FutureState
+from .shield import shield_wait_forever
 from .thread_safe_state import ThreadsafeState
 from .thread_sync import run_in_thread_loop_contextualized_sync
 
 
-async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
+async def launch_in_thread_loop[T](target: Awaitable[T], /, use_executor: bool = True) -> Awaitable[T]:
     """
     Launch an awaitable in a separate thread with its own event loop.
 
@@ -23,6 +25,9 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
     ----------
     target
         The awaitable to run in a separate thread.
+    use_executor
+        Whether to use one of the event loop's executors instead of creating a
+        new thread.
 
     Returns
     -------
@@ -51,8 +56,18 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
 
         return await task
 
-    thread = Thread(target=thread_main)
-    thread.start()
+
+    context = contextvars.copy_context()
+
+    if use_executor:
+        loop = asyncio.get_running_loop()
+
+        thread = None
+        thread_future = loop.run_in_executor(None, context.run, thread_main)
+    else:
+        thread = Thread(target=context.run, args=(thread_main,))
+        thread.start()
+        thread_future = None
 
 
     # Wait for the task to start
@@ -98,7 +113,12 @@ async def launch_in_thread_loop[T](target: Awaitable[T], /) -> Awaitable[T]:
             else:
                 break
 
-        thread.join()
+        if use_executor:
+            assert thread_future is not None
+            await shield_wait_forever(thread_future)
+        else:
+            assert thread is not None
+            thread.join()
 
         assert result is not None
         value = result.apply()
@@ -154,7 +174,7 @@ async def run_in_thread_loop_contextualized_async(target: Awaitable[None], /):
     """
 
     async with contextualize(
-        await launch_in_thread_loop(target),
+        await launch_in_thread_loop(target, use_executor=False),
     ):
         yield
 

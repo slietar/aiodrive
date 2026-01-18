@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 from asyncio import Future
 from collections.abc import Awaitable, Callable
 from threading import Thread
@@ -22,13 +23,13 @@ def launch_in_thread_loop_sync[T](target: Awaitable[T], /):
   Parameters
   ----------
   target
-      The awaitable to run in a separate thread.
+    The awaitable to run in a separate thread.
 
   Returns
   -------
   Awaitable[T]
-      An awaitable which resolves to the result of the provided awaitable. The
-      returned value must be awaited.
+    An awaitable which resolves to the result of the provided awaitable. The
+    returned value must be awaited.
   """
 
   result: Optional[FutureState[T]] = None
@@ -51,7 +52,9 @@ def launch_in_thread_loop_sync[T](target: Awaitable[T], /):
 
     return await task
 
-  thread = Thread(target=thread_main)
+  context = contextvars.copy_context()
+
+  thread = Thread(target=context.run, args=(thread_main,))
   thread.start()
 
   stage.wait_until_sync(lambda value: value == "running")

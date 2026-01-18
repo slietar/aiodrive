@@ -21,6 +21,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`GuaranteedTask`**<br>A variant of `Task` that that guarantees that the provided awaitable is awaited before any cancellation occurs.
   - **`ShieldContext`**<br>A class for shielding awaitables from cancellation based on the cancellation request count at the time of instantiation.
   - **`cancel_task()`**<br>Cancel and await the provided task.
+  - **`possibly_await()`**<br>Wait for the given object if it is awaitable, or otherwise return it as is.
   - **`prime()`**<br>Prime an awaitable such that as much code as possible is executed immediately.
   - **`primed()`**<br>Decorate the given function such that it returns a primed awaitable.
   - **`shield()`**<br>Shield an awaitable from cancellation.

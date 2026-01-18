@@ -11,9 +11,12 @@ from .shield import shield_wait_forever
 from .thread_safe_state import ThreadsafeState
 
 
-def run_in_thread_loop_contextualized_sync[T](target: Awaitable[T], /):
+def launch_in_thread_loop_sync[T](target: Awaitable[T], /):
   """
-  Run an awaitable in a separate thread with its own event loop.
+  Launch an awaitable in a separate thread with its own event loop.
+
+  This function returns after the first iteration of the event loop in the
+  thread has completed.
 
   Parameters
   ----------
@@ -22,8 +25,9 @@ def run_in_thread_loop_contextualized_sync[T](target: Awaitable[T], /):
 
   Returns
   -------
-  T
-      The result of the provided awaitable.
+  Awaitable[T]
+      An awaitable which resolves to the result of the provided awaitable. The
+      returned value must be awaited.
   """
 
   result: Optional[FutureState[T]] = None
@@ -49,10 +53,10 @@ def run_in_thread_loop_contextualized_sync[T](target: Awaitable[T], /):
   thread = Thread(target=thread_main)
   thread.start()
 
-  try:
-    stage.wait_until_sync(lambda value: value == "running")
-    yield
-  finally:
+  stage.wait_until_sync(lambda value: value == "running")
+
+  def finish():
+    assert result is not None
     assert task is not None
 
     try:
@@ -63,8 +67,59 @@ def run_in_thread_loop_contextualized_sync[T](target: Awaitable[T], /):
     stage.wait_until_sync(lambda value: value == "join")
     thread.join()
 
-  with suppress(asyncio.CancelledError):
-    result.apply()
+    with suppress(asyncio.CancelledError):
+      return result.apply()
+
+  return finish
+
+
+def run_in_thread_loop_sync[T](target: Awaitable[T], /):
+  """
+  Run an awaitable in a separate thread with its own event loop.
+
+  This function returns once the thread has terminated.
+
+  Parameters
+  ----------
+  target
+    The awaitable to run in a separate thread.
+
+  Returns
+  -------
+  T
+    The result of the provided awaitable.
+  """
+
+  return launch_in_thread_loop_sync(target)()
+
+
+# Not public
+def run_in_thread_loop_contextualized_sync[T](target: Awaitable[T], /):
+  """
+  Run an awaitable in a separate thread with its own event loop, using a
+  context manager.
+
+  The context manager's entry completes once the first iteration of the event
+  loop of the thread has completed.
+
+  Parameters
+  ----------
+  target
+      The awaitable to run in a separate thread. Its return value is discarded.
+
+  Returns
+  -------
+  AbstractAsyncContextManager[None]
+      An async context manager which runs the provided awaitable in a separate
+      thread.
+  """
+
+  finish = launch_in_thread_loop_sync(target)
+
+  try:
+    yield
+  finally:
+    finish()
 
 
 async def to_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
@@ -93,6 +148,7 @@ async def to_thread[**P, T](func: Callable[P, T], /, *args: P.args, **kwargs: P.
 
 
 __all__ = [
-  'run_in_thread_loop_contextualized_sync',
+  'launch_in_thread_loop_sync',
+  'run_in_thread_loop_sync',
   'to_thread',
 ]

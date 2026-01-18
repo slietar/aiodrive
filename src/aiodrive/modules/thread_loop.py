@@ -116,7 +116,7 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
     """
     Run an awaitable in a separate thread with its own event loop.
 
-    This function returns once the other thread has terminated.
+    This function returns once the thread has terminated.
 
     Parameters
     ----------
@@ -132,6 +132,7 @@ async def run_in_thread_loop[T](target: Awaitable[T], /) -> T:
     return await (await launch_in_thread_loop(target))
 
 
+# Not public
 async def run_in_thread_loop_contextualized_async(target: Awaitable[None], /):
     """
     Run an awaitable in a separate thread with its own event loop, using a

@@ -64,7 +64,9 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   <!-- - **`threadsafe_aiter()`**<br>Create an async iterator that can be consumed from a different thread than the one producing items. -->
   <!-- - **`threadsafe_agen()`**<br>Create an async generator that can be consumed from a different thread than the one producing items. -->
   - **`launch_in_thread_loop()`**<br>Launch an awaitable in a separate thread with its own event loop.
+  - **`launch_in_thread_loop_sync()`**<br>Launch an awaitable in a separate thread with its own event loop.
   - **`run_in_thread_loop()`**<br>Run an awaitable in a separate thread with its own event loop.
+  - **`run_in_thread_loop_sync()`**<br>Run an awaitable in a separate thread with its own event loop.
   - **`run_in_thread_loop_contextualized()`**<br>Run an awaitable in a separate thread with its own event loop, using a context manager.
 - Creating awaitables
   - **`checkpoint()`**<br>Check that the current task was not cancelled.

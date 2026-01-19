@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from asyncio import Future
 from collections.abc import Awaitable, Callable, Generator
@@ -40,7 +41,8 @@ async def wait_forever() -> Never: # type: ignore
   Wait indefinitely.
   """
 
-  await Future()
+  loop = asyncio.get_running_loop()
+  await loop.create_future()
 
 
 __all__ = [

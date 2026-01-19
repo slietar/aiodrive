@@ -15,8 +15,10 @@ class Button:
   _future: Future[None] = field(default_factory=Future, init=False, repr=False)
 
   def press(self):
+    loop = asyncio.get_running_loop()
+
     self._future.set_result(None)
-    self._future = Future()
+    self._future = loop.create_future()
 
   def __await__(self):
     return asyncio.shield(self._future).__await__()
@@ -31,8 +33,10 @@ class Cargo[T]:
   _future: Future[T] = field(default_factory=Future, init=False, repr=False)
 
   def __call__(self, value: T, /):
+    loop = asyncio.get_running_loop()
+
     self._future.set_result(value)
-    self._future = Future()
+    self._future = loop.create_future()
 
   def __await__(self):
     return asyncio.shield(self._future).__await__()

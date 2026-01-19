@@ -104,8 +104,10 @@ def using_pending_daemon_handle[**P, T](func: Callable[P, AsyncGenerator[T]], /)
       return value, second_call()
 
     async def second_call():
+      loop = asyncio.get_running_loop()
+
       try:
-        await Future()
+        await loop.create_future()
       except asyncio.CancelledError:
         try:
           await anext(generator)

@@ -88,10 +88,12 @@ class ThreadsafeLock:
 class ThreadsafeCondition:
   """
   A thread-safe condition.
+
+  This class is only supported from Python 3.13 onwards.
   """
 
   lock: ThreadsafeLock = field(default_factory=ThreadsafeLock, init=False, repr=False)
-  _waiters: set[Future[None] | ThreadingLock] = field(default_factory=set, init=False, repr=False)
+  _waiters: 'set[Future[None] | ThreadingLock]' = field(default_factory=set, init=False, repr=False)
 
   def notify(self):
     # The lock must be acquired here

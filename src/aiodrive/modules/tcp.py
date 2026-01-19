@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional, override
 
+import aiodrive
+
 from .handle import using_pending_daemon_handle
 from .shield import ShieldContext
 from .task_group import volatile_task_group
@@ -86,8 +88,6 @@ class TCPServer:
          their connections once they return.
     """
 
-    context = ShieldContext()
-
     def handle_connection_sync(reader: StreamReader, writer: StreamWriter):
       group.create_task(handle_connection_async(reader, writer))
 
@@ -103,9 +103,12 @@ class TCPServer:
         ))
       finally:
         writer.close()
-        await context.shield(writer.wait_closed())
+
+        with aiodrive.suppress(ConnectionError):
+          await context.shield(writer.wait_closed())
 
     server = await asyncio.start_server(handle_connection_sync, host, port)
+    context = ShieldContext()
 
     try:
       async with volatile_task_group() as group:

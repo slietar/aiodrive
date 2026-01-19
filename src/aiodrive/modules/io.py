@@ -1,7 +1,9 @@
 import asyncio
 from asyncio import StreamReader, StreamReaderProtocol, StreamWriter
 from asyncio.streams import FlowControlMixin
-from typing import IO
+import inspect
+import sys
+from typing import IO, Protocol
 
 
 async def get_reader(file: IO[bytes], /):
@@ -47,7 +49,23 @@ async def get_writer(file: IO[bytes], /):
   return StreamWriter(transport, protocol, None, loop)
 
 
-async def pipe(source: StreamReader, destination: StreamWriter, /, *, chunk_size: int = 65_536):
+class AsyncReader(Protocol):
+  async def read(self, n: int = -1) -> bytes:
+    ...
+
+class AsyncWriter(Protocol):
+  async def write(self, chunk: bytes) -> None:
+    ...
+
+if sys.version_info >= (3, 14):
+  from io import Writer
+else:
+  class Writer(Protocol):
+    def write(self, chunk: bytes) -> int:
+      ...
+
+
+async def pipe(source: AsyncReader, destination: AsyncWriter | StreamWriter | Writer, /, *, chunk_size: int = 65_536):
   """
   Pipe data from the source to the destination.
 
@@ -58,7 +76,7 @@ async def pipe(source: StreamReader, destination: StreamWriter, /, *, chunk_size
   destination
     The destination to write to.
   chunk_size
-    The size of each chunk to read and write.
+    The maximal size of each chunk to read and write.
   """
 
   while True:
@@ -67,8 +85,14 @@ async def pipe(source: StreamReader, destination: StreamWriter, /, *, chunk_size
     if not chunk:
       break
 
-    destination.write(chunk)
-    await destination.drain()
+    if isinstance(destination, StreamWriter):
+      destination.write(chunk)
+      await destination.drain()
+    else:
+      result = destination.write(chunk)
+
+      if inspect.isawaitable(result):
+        await result
 
 
 __all__ = [

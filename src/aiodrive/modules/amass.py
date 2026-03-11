@@ -3,8 +3,8 @@ from collections.abc import Awaitable, Iterable
 
 from ..internal.future import ensure_future
 from ..internal.sized import (
-  CloseableSizedAsyncIterable,
-  sized_aiter,
+  CloseableSizedAsyncIterator,
+  sized_aiterator,
 )
 from .gather import gather
 
@@ -12,12 +12,12 @@ from .gather import gather
 # TODO: Add max_concurrent_count
 
 
-def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -> CloseableSizedAsyncIterable[T]:
+def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -> CloseableSizedAsyncIterator[T]:
   """
-  Create an asynchronous generator that yields results from awaitables as they
+  Create an asynchronous iterator that yields results from awaitables as they
   complete.
 
-  It is crucial to close the generator for internal tasks to be cleaned up.
+  It is crucial to close the iterator for internal tasks to be cleaned up.
 
   This function is similar to `asyncio.as_completed()` but provides better
   cancellation behavior.
@@ -74,7 +74,7 @@ def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -
     if cancelled:
       raise asyncio.CancelledError
 
-  return sized_aiter(generator(), length=len(tasks))
+  return sized_aiterator(generator(), length=len(tasks)) # type: ignore
 
 
 __all__ = [

@@ -3,6 +3,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
 from typing import Any, Optional, cast, overload
 
 from .checkpoint import suspend
+from .closing import auto_closing
 from .contextualize import contextualize
 from .latch import Latch
 
@@ -82,15 +83,19 @@ def ensure_aiter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterato
   Returns
   -------
   AsyncIterator[T]
-    The created async iterator.
+    The created async iterator. If the input is a closeable iterable, the output
+    is also closeable.
   """
 
-  if hasattr(iterable, "__aiter__"):
-    return aiter(iterable)  # type: ignore
+  if isinstance(iterable, AsyncIterable):
+    return aiter(iterable)
   else:
     async def create_aiter():
-      for item in iterable:  # type: ignore
-        yield item
+      iterator = iter(iterable)
+
+      with auto_closing(iterator):
+        for item in iterator:
+          yield item
 
     return create_aiter()
 
@@ -124,6 +129,7 @@ async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T]
   S
     The final accumulated value.
   """
+
   iterator = aiter(iterable)
 
   if initial is not initial_missing:

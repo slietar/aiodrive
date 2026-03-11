@@ -3,11 +3,11 @@ from typing import Optional, overload
 
 from ..internal.queue import OrderedQueue, UnorderedQueue
 from ..internal.sized import (
-  CloseableAsyncIterable,
-  CloseableSizedAsyncIterable,
+  CloseableAsyncIterator,
+  CloseableSizedAsyncIterator,
   SizedAsyncIterable,
   SizedIterable,
-  sized_aiter,
+  sized_aiterator,
 )
 from .aiter import ensure_aiter
 from .task_group import volatile_task_group
@@ -20,7 +20,7 @@ def map[T, S](
   /, *,
   max_concurrent_count: Optional[int] = ...,
   ordered: bool,
-) -> CloseableSizedAsyncIterable[S]:
+) -> CloseableSizedAsyncIterator[S]:
   ...
 
 @overload
@@ -30,7 +30,7 @@ def map[T, S](
   /, *,
   max_concurrent_count: Optional[int] = ...,
   ordered: bool,
-) -> CloseableAsyncIterable[S]:
+) -> CloseableAsyncIterator[S]:
   ...
 
 def map[T, S](
@@ -39,10 +39,10 @@ def map[T, S](
   /, *,
   max_concurrent_count: Optional[int] = None,
   ordered: bool,
-) -> CloseableAsyncIterable[S] | CloseableSizedAsyncIterable[S]:
+) -> CloseableAsyncIterator[S] | CloseableSizedAsyncIterator[S]:
   """
-  Map an `Iterable` or `AsyncIterable` to an `AsyncIterable` using the given
-  asynchronous mapper function.
+  Map an iterable or asynchronous iterable to an asynchronous iterator using the
+  given asynchronous mapper function.
 
   Parameters
   ----------
@@ -63,9 +63,9 @@ def map[T, S](
 
   Returns
   -------
-  Generator[S]
-    An asynchronous generator yielding the mapped items. It is crucial to close
-    the generator for internal tasks to be cleaned up.
+  CloseableAsyncIterator[S]
+    A closeable asynchronous iterator yielding the mapped items. It is crucial
+    to close it for internal tasks to be cleaned up.
   """
 
   assert (max_concurrent_count is None) or (max_concurrent_count >= 1)
@@ -105,7 +105,7 @@ def map[T, S](
   else:
     length = None
 
-  return sized_aiter(generator(), length=length)
+  return sized_aiterator(generator(), length=length)
 
 
 __all__ = [

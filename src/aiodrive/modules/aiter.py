@@ -2,6 +2,7 @@ from collections import deque
 from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
 from typing import Any, Optional, cast, overload
 
+from .checkpoint import suspend
 from .contextualize import contextualize
 from .latch import Latch
 
@@ -141,9 +142,32 @@ async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T]
   return accumulator
 
 
+async def suspend_iter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterator[T]:
+  """
+  Create an asynchronous iterator that yields items from the provided iterable,
+  waiting for the next iteration of the event loop between each item.
+
+  Parameters
+  ----------
+  iterable
+    The sync or async iterable to yield items from.
+
+  Returns
+  -------
+  Iterator[T]
+    An asynchronous generator yielding items from the iterable. It is crucial to
+    close the generator for internal tasks to be cleaned up.
+  """
+
+  async for item in ensure_aiter(iterable):
+    await suspend()
+    yield item
+
+
 __all__ = [
   'buffer_aiter',
   'collect',
   'ensure_aiter',
   'reduce',
+  'suspend_iter',
 ]

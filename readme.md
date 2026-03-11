@@ -37,6 +37,7 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`map()`**<br>Map an iterable or asynchronous iterable to an asynchronous iterable using the given asynchronous mapper function.
   - **`reduce()`**<br>Reduce the items from the provided asynchronous iterable.
   - **`zip_concurrently()`**<br>Zip multiple asynchronous iterables together, yielding tuples of items from each iterable.
+  - **`suspend_iter()`**<br>Create an asynchronous iterator that yields items from the provided iterable, waiting for the next iteration of the event loop between each item.
 - Creating context managers
   - **`DaemonHandle`**<br>A class that manages the awaiting and cancellation of a daemon awaitable.
   - **`PendingDaemonHandle`**<br>A class that manages the initialization, awaiting and cancellation of a daemon awaitable.

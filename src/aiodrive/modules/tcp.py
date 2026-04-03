@@ -1,10 +1,12 @@
 import asyncio
+import sys
 from asyncio import StreamReader, StreamWriter
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from ipaddress import IPv4Address, IPv6Address
 from typing import Optional, override
 
+from .checkpoint import suspend
 from .handle import using_pending_daemon_handle
 from .shield import ShieldContext
 from .task_group import volatile_task_group
@@ -89,7 +91,10 @@ class TCPServer:
     context = ShieldContext()
 
     def handle_connection_sync(reader: StreamReader, writer: StreamWriter):
-      group.create_task(handle_connection_async(reader, writer))
+      if sys.version_info >= (3, 14):
+        group.create_task(handle_connection_async(reader, writer), eager_start=True)
+      else:
+        group.create_task(handle_connection_async(reader, writer))
 
     async def handle_connection_async(reader: StreamReader, writer: StreamWriter):
       context = ShieldContext()
@@ -114,6 +119,9 @@ class TCPServer:
             bindings=[SocketName.parse(sock.getsockname()) for sock in server.sockets],
           )
         finally:
+          # Necessary to avoid an exception from asyncio internals
+          await suspend()
+
           server.close()
     finally:
       await context.shield(server.wait_closed())

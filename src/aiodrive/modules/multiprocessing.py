@@ -1,46 +1,56 @@
 import asyncio
-import contextlib
-from asyncio import Future
+import os
+import pickle
+import socket
+import struct
+from asyncio import Future, StreamReader, StreamWriter
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from multiprocessing import Pipe, Process
-from multiprocessing.connection import Connection
+from multiprocessing import Process
 from signal import Signals
+from typing import Any
 
-from ..internal.future import ensure_future
 from .contextualize import contextualize
 from .future_state import FutureState
-from .shield import shield
+from .task_group import volatile_task_group
 from .thread_sync import to_thread
 
 
-async def recv_connection(conn: Connection, /):
-    """
-    Receive a message from a multiprocessing `Connection`.
+@dataclass(slots=True)
+class Connection:
+    _reader: StreamReader
+    _writer: StreamWriter
 
-    Parameters
-    ----------
-    conn
-        The `Connection` to receive the message from.
+    async def read(self):
+        size_bytes = await self._reader.read(4)
+        size, = struct.unpack("!i", size_bytes)
 
-    Returns
-    -------
-    Any
-        The received message.
-    """
+        x = pickle.loads(await self._reader.read(size))
+        print("Received", os.getpid(), x)
+        return x
 
-    job = ensure_future(to_thread(conn.recv))
+    async def send(self, obj: Any):
+        print("Sending", os.getpid(), obj)
 
-    try:
-        return await shield(job)
-    except asyncio.CancelledError:
-        conn.close()
+        data = pickle.dumps(obj)
+        size = len(data)
+        size_bytes = struct.pack("!i", size)
 
-        with contextlib.suppress(IOError):
-            await job
+        self._writer.write(size_bytes)
+        self._writer.write(data)
 
-        raise
+        await self._writer.drain()
+
+
+async def create_pipe():
+    parent_sock, child_sock = socket.socketpair()
+    reader, writer = await asyncio.open_connection(sock=parent_sock)
+
+    return (
+        Connection(reader, writer),
+        child_sock,
+    )
 
 
 @dataclass(slots=True)
@@ -59,45 +69,56 @@ class FinishTaskMessage:
     state: FutureState
     task_id: int
 
+@dataclass(slots=True)
+class ShutdownMessage:
+    pass
+
 
 # This must be publicly available
-def process_main(conn: Connection):
+def process_main(conn):
     asyncio.run(process_main_async(conn))
 
-async def process_main_async(conn: Connection):
+async def process_main_async(ser_conn: socket.socket):
+    # conn = await ser_conn.to_connection()
+    reader, writer = await asyncio.open_connection(sock=ser_conn)
+    conn = Connection(reader, writer)
+
     # Prevent SIGINT from propagating to the child process
     loop = asyncio.get_running_loop()
     loop.add_signal_handler(Signals.SIGINT, lambda: None)
 
     tasks = dict[int, Future]()
 
-    def task_done_callback(task_id: int):
-        task = tasks.pop(task_id)
-        state = FutureState.absorb_future(task)
+    async with volatile_task_group() as group:
+        while True:
+            try:
+                message: CreateTaskMessage | CancelTaskMessage = await conn.read()
+            except EOFError:
+                assert not tasks
+                break
 
-        conn.send(FinishTaskMessage(state, task_id))
+            match message:
+                case CreateTaskMessage():
+                    async def wait_task(message: CreateTaskMessage):
+                        state = await FutureState.absorb_awaitable(
+                            message.target(*message.args, **message.kwargs),
+                        )
 
-    while True:
-        try:
-            message: CreateTaskMessage | CancelTaskMessage = await to_thread(conn.recv)
-        except EOFError:
-            assert not tasks
-            break
+                        await conn.send(FinishTaskMessage(state, message.task_id))
 
-        match message:
-            case CreateTaskMessage():
-                task = ensure_future(message.target(*message.args, **message.kwargs))
-                task.add_done_callback(lambda task, task_id = message.task_id: task_done_callback(task_id))
-                tasks[message.task_id] = task
-            case CancelTaskMessage():
-                task = tasks.get(message.task_id)
+                    task = group.create_task(wait_task(message))
+                    tasks[message.task_id] = task
+                case CancelTaskMessage():
+                    task = tasks.get(message.task_id)
 
-                # The task may be none if it finished before the cancel message
-                # was processed
-                if task is not None:
-                    task.cancel()
-            case _:
-                raise ValueError
+                    # The task may be none if it finished before the cancel message
+                    # was processed
+                    if task is not None:
+                        task.cancel()
+                case ShutdownMessage():
+                    break
+                case _:
+                    raise ValueError
 
 
 class MultiprocessingProcess:
@@ -108,7 +129,7 @@ class MultiprocessingProcess:
     async def __aenter__(self):
         self._tasks = dict[int, Future]()
         self._next_task_id = 0
-        self._server_conn, client_conn = Pipe()
+        self._server_conn, client_conn = await create_pipe()
 
         self._process = Process(target=process_main, args=(client_conn,))
         self._process.start()
@@ -116,13 +137,15 @@ class MultiprocessingProcess:
         self._stack = AsyncExitStack()
         await self._stack.__aenter__()
 
-        async def close_callback1():
+        async def close_callback():
+            await self._server_conn.send(ShutdownMessage())
+
             await to_thread(self._process.join)
 
             if self._process.exitcode != 0:
                 raise RuntimeError(f"Process exited with code {self._process.exitcode}")
 
-        self._stack.push_async_callback(close_callback1)
+        self._stack.push_async_callback(close_callback)
         await self._stack.enter_async_context(contextualize(self._loop()))
 
         return self
@@ -132,7 +155,7 @@ class MultiprocessingProcess:
 
     async def _loop(self):
         while True:
-            message: FinishTaskMessage = await recv_connection(self._server_conn)
+            message: FinishTaskMessage = await self._server_conn.read()
 
             future = self._tasks.pop(message.task_id)
             message.state.transfer(future)
@@ -161,7 +184,7 @@ class MultiprocessingProcess:
         task_id = self._next_task_id
         self._next_task_id += 1
 
-        self._server_conn.send(
+        await self._server_conn.send(
             CreateTaskMessage(
                 task_id=task_id,
                 target=func,
@@ -180,7 +203,7 @@ class MultiprocessingProcess:
                 if future.done():
                     raise
 
-                self._server_conn.send(CancelTaskMessage(task_id=task_id))
+                await self._server_conn.send(CancelTaskMessage(task_id=task_id))
 
 
 async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs) -> R:
@@ -210,6 +233,5 @@ async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args,
 
 __all__ = [
     "MultiprocessingProcess",
-    "recv_connection",
     "run_in_process",
 ]

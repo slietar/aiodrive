@@ -10,6 +10,9 @@ from typing import Any, Literal, Optional, cast
 class FutureState[T]:
     """
     A primitive for storing a future's state.
+
+    This class provides similar functionality to the
+    `asyncio.Future._get_snapshot()` method of CPython.
     """
 
     exception: Optional[BaseException] = None

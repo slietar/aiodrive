@@ -13,8 +13,13 @@ from typing import Any
 
 from .contextualize import contextualize
 from .future_state import FutureState
+from .shield import shield
 from .task_group import volatile_task_group
 from .thread_sync import to_thread
+
+
+class UnpicklableError(Exception):
+    pass
 
 
 @dataclass(slots=True)
@@ -22,18 +27,19 @@ class Connection:
     _reader: StreamReader
     _writer: StreamWriter
 
-    async def read(self):
+    async def recv(self):
         size_bytes = await self._reader.read(4)
+
+        if not size_bytes:
+            raise EOFError
+
         size, = struct.unpack("!i", size_bytes)
 
         x = pickle.loads(await self._reader.read(size))
         print("Received", os.getpid(), x)
         return x
 
-    async def send(self, obj: Any):
-        print("Sending", os.getpid(), obj)
-
-        data = pickle.dumps(obj)
+    async def send(self, data: bytes):
         size = len(data)
         size_bytes = struct.pack("!i", size)
 
@@ -42,14 +48,17 @@ class Connection:
 
         await self._writer.drain()
 
+    async def send_object(self, obj: Any):
+        await self.send(pickle.dumps(obj))
+
 
 async def create_pipe():
-    parent_sock, child_sock = socket.socketpair()
-    reader, writer = await asyncio.open_connection(sock=parent_sock)
+    parent_socket, client_socket = socket.socketpair()
+    reader, writer = await asyncio.open_connection(sock=parent_socket)
 
     return (
         Connection(reader, writer),
-        child_sock,
+        client_socket,
     )
 
 
@@ -75,12 +84,12 @@ class ShutdownMessage:
 
 
 # This must be publicly available
-def process_main(conn):
-    asyncio.run(process_main_async(conn))
+def process_main(client_socket: socket.socket):
+    asyncio.run(process_main_async(client_socket))
 
-async def process_main_async(ser_conn: socket.socket):
+async def process_main_async(client_socket: socket.socket):
     # conn = await ser_conn.to_connection()
-    reader, writer = await asyncio.open_connection(sock=ser_conn)
+    reader, writer = await asyncio.open_connection(sock=client_socket)
     conn = Connection(reader, writer)
 
     # Prevent SIGINT from propagating to the child process
@@ -89,30 +98,36 @@ async def process_main_async(ser_conn: socket.socket):
 
     tasks = dict[int, Future]()
 
+    async def wait_task(message: CreateTaskMessage):
+        async def fn():
+            return pickle.dumps(
+                await message.target(*message.args, **message.kwargs),
+            )
+
+        state = await FutureState.absorb_awaitable(message.target(*message.args, **message.kwargs))
+
+        try:
+            data = pickle.dumps(FinishTaskMessage(state, message.task_id))
+        except (TypeError, pickle.PicklingError) as e:
+            state = FutureState.new_failed(e)
+            data = pickle.dumps(FinishTaskMessage(state, message.task_id))
+
+        del tasks[message.task_id]
+        await conn.send(data)
+
     async with volatile_task_group() as group:
         while True:
-            try:
-                message: CreateTaskMessage | CancelTaskMessage = await conn.read()
-            except EOFError:
-                assert not tasks
-                break
+            message = await conn.recv()
 
             match message:
                 case CreateTaskMessage():
-                    async def wait_task(message: CreateTaskMessage):
-                        state = await FutureState.absorb_awaitable(
-                            message.target(*message.args, **message.kwargs),
-                        )
-
-                        await conn.send(FinishTaskMessage(state, message.task_id))
-
                     task = group.create_task(wait_task(message))
                     tasks[message.task_id] = task
                 case CancelTaskMessage():
                     task = tasks.get(message.task_id)
 
-                    # The task may be none if it finished before the cancel message
-                    # was processed
+                    # The task may be None if it finished before the cancel
+                    # message was processed
                     if task is not None:
                         task.cancel()
                 case ShutdownMessage():
@@ -129,16 +144,16 @@ class MultiprocessingProcess:
     async def __aenter__(self):
         self._tasks = dict[int, Future]()
         self._next_task_id = 0
-        self._server_conn, client_conn = await create_pipe()
+        self._server_conn, client_socket = await create_pipe()
 
-        self._process = Process(target=process_main, args=(client_conn,))
+        self._process = Process(target=process_main, args=(client_socket,))
         self._process.start()
 
         self._stack = AsyncExitStack()
         await self._stack.__aenter__()
 
         async def close_callback():
-            await self._server_conn.send(ShutdownMessage())
+            await self._server_conn.send_object(ShutdownMessage())
 
             await to_thread(self._process.join)
 
@@ -155,7 +170,7 @@ class MultiprocessingProcess:
 
     async def _loop(self):
         while True:
-            message: FinishTaskMessage = await self._server_conn.read()
+            message: FinishTaskMessage = await self._server_conn.recv()
 
             future = self._tasks.pop(message.task_id)
             message.state.transfer(future)
@@ -184,7 +199,7 @@ class MultiprocessingProcess:
         task_id = self._next_task_id
         self._next_task_id += 1
 
-        await self._server_conn.send(
+        await self._server_conn.send_object(
             CreateTaskMessage(
                 task_id=task_id,
                 target=func,
@@ -198,12 +213,16 @@ class MultiprocessingProcess:
 
         while True:
             try:
-                return await asyncio.shield(future)
+                return await shield(future)
             except asyncio.CancelledError:
                 if future.done():
                     raise
 
-                await self._server_conn.send(CancelTaskMessage(task_id=task_id))
+                await self._server_conn.send_object(CancelTaskMessage(task_id=task_id))
+
+                # Raise in case the cancellation message arrived too late and
+                # the task already finished
+                raise
 
 
 async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs) -> R:

@@ -2,10 +2,9 @@ import asyncio
 import os
 import pickle
 import socket
-import struct
 from asyncio import Future, StreamReader, StreamWriter
 from collections.abc import Awaitable, Callable
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from dataclasses import dataclass
 from multiprocessing import Process
 from signal import Signals
@@ -13,13 +12,8 @@ from typing import Any
 
 from .contextualize import contextualize
 from .future_state import FutureState
-from .shield import shield
 from .task_group import volatile_task_group
 from .thread_sync import to_thread
-
-
-class UnpicklableError(Exception):
-    pass
 
 
 @dataclass(slots=True)
@@ -33,7 +27,7 @@ class Connection:
         if not size_bytes:
             raise EOFError
 
-        size, = struct.unpack("!i", size_bytes)
+        size = int.from_bytes(size_bytes)
 
         x = pickle.loads(await self._reader.read(size))
         print("Received", os.getpid(), x)
@@ -41,7 +35,7 @@ class Connection:
 
     async def send(self, data: bytes):
         size = len(data)
-        size_bytes = struct.pack("!i", size)
+        size_bytes = size.to_bytes(4)
 
         self._writer.write(size_bytes)
         self._writer.write(data)
@@ -99,11 +93,6 @@ async def process_main_async(client_socket: socket.socket):
     tasks = dict[int, Future]()
 
     async def wait_task(message: CreateTaskMessage):
-        async def fn():
-            return pickle.dumps(
-                await message.target(*message.args, **message.kwargs),
-            )
-
         state = await FutureState.absorb_awaitable(message.target(*message.args, **message.kwargs))
 
         try:
@@ -153,7 +142,8 @@ class MultiprocessingProcess:
         await self._stack.__aenter__()
 
         async def close_callback():
-            await self._server_conn.send_object(ShutdownMessage())
+            with suppress(IOError):
+                await self._server_conn.send_object(ShutdownMessage())
 
             await to_thread(self._process.join)
 
@@ -170,10 +160,17 @@ class MultiprocessingProcess:
 
     async def _loop(self):
         while True:
-            message: FinishTaskMessage = await self._server_conn.recv()
+            try:
+                message: FinishTaskMessage = await self._server_conn.recv()
+            except EOFError:
+                for future in self._tasks.values():
+                    future.set_exception(ConnectionError("Connection closed"))
 
-            future = self._tasks.pop(message.task_id)
-            message.state.transfer(future)
+                self._tasks.clear()
+                break
+            else:
+                future = self._tasks.pop(message.task_id)
+                message.state.transfer(future)
 
     async def spawn[**P, R](self, func: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs):
         """
@@ -213,16 +210,12 @@ class MultiprocessingProcess:
 
         while True:
             try:
-                return await shield(future)
+                return await asyncio.shield(future)
             except asyncio.CancelledError:
                 if future.done():
                     raise
 
                 await self._server_conn.send_object(CancelTaskMessage(task_id=task_id))
-
-                # Raise in case the cancellation message arrived too late and
-                # the task already finished
-                raise
 
 
 async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs) -> R:

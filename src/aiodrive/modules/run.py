@@ -5,7 +5,12 @@ from collections.abc import Awaitable
 from typing import Optional
 
 
-def run[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = None):
+def run[T](
+  awaitable: Awaitable[T],
+  /, *,
+  enforce_structured_concurrency: bool = False,
+  loop: Optional[AbstractEventLoop] = None,
+):
   """
   Run an awaitable in an event loop with enforced structured concurrency.
 
@@ -16,6 +21,9 @@ def run[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = No
   ----------
   awaitable
     The awaitable to run.
+  enforce_structured_concurrency
+    Whether to raise an error if there are unclosed async generators or
+    unfinished tasks at event loop shutdown.
   loop
     The event loop to use. It is closed before returning. Defaults to a new
     event loop.
@@ -28,8 +36,8 @@ def run[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = No
   Raises
   ------
   RuntimeError
-    If there are unclosed async generators or unfinished tasks at event loop
-    shutdown.
+    If `enforce_structured_concurrency` is True and there are unclosed async
+    generators or unfinished tasks at event loop shutdown.
   """
 
   if loop is not None:
@@ -51,13 +59,15 @@ def run[T](awaitable: Awaitable[T], /, *, loop: Optional[AbstractEventLoop] = No
           effective_loop.run_until_complete(effective_loop.shutdown_asyncgens())
           asyncio.runners._cancel_all_tasks(effective_loop) # type: ignore
 
-          # raise RuntimeError('Unclosed async generators at event loop shutdown')
+          if enforce_structured_concurrency:
+            raise RuntimeError('Unclosed async generators at event loop shutdown')
 
       if asyncio.all_tasks(effective_loop):
         # Same here
         asyncio.runners._cancel_all_tasks(effective_loop) # type: ignore
 
-        # raise RuntimeError('Unfinished tasks at event loop shutdown')
+        if enforce_structured_concurrency:
+          raise RuntimeError('Unfinished tasks at event loop shutdown')
 
   finally:
     effective_loop.close()

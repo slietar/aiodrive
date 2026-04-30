@@ -43,5 +43,7 @@ import select
 
 if hasattr(select, 'kqueue'):
     from .modules.kqueue import *
+    from .modules.lock import *
+    from .modules.watch import *
 
 del select

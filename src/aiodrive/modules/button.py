@@ -2,6 +2,8 @@ import asyncio
 from asyncio import Future
 from dataclasses import dataclass, field
 
+from .shield import shield
+
 
 @dataclass(slots=True)
 class Button:
@@ -21,7 +23,7 @@ class Button:
     self._future = loop.create_future()
 
   def __await__(self):
-    return asyncio.shield(self._future).__await__()
+    return shield(self._future).__await__()
 
 
 @dataclass(slots=True)
@@ -39,7 +41,7 @@ class Cargo[T]:
     self._future = loop.create_future()
 
   def __await__(self):
-    return asyncio.shield(self._future).__await__()
+    return shield(self._future).__await__()
 
 
 __all__ = [

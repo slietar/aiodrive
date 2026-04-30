@@ -18,8 +18,8 @@ class KqueueEventManagerContext:
     """
 
 
-@contextlib.asynccontextmanager
-async def KqueueEventManager(
+@contextlib.contextmanager
+def KqueueEventManager(
     callback: Callable[[select.kevent], None],
     /,
 ):

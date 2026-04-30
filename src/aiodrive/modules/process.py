@@ -248,7 +248,7 @@ async def wait_for_process_kqueue(pid: int):
   def callback(kevent: select.kevent):
     future.set_result(None)
 
-  async with KqueueEventManager(callback) as manager:
+  with KqueueEventManager(callback) as manager:
     if not process_exists(pid):
       return
 

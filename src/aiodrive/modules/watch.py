@@ -185,7 +185,7 @@ async def watch_path(
             select.kevent(
                 watched.fd,
                 filter=select.KQ_FILTER_VNODE,
-                flags=(select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR),
+                flags=(select.KQ_EV_ADD | select.KQ_EV_CLEAR),
                 fflags=(select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME | select.KQ_NOTE_WRITE),
             ),
         ])
@@ -200,7 +200,7 @@ async def watch_path(
             update_down(path.parent)
 
     try:
-        async with KqueueEventManager(internal_callback) as manager:
+        with KqueueEventManager(internal_callback) as manager:
             update_down(target_path)
             yield
     finally:

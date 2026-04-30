@@ -9,7 +9,8 @@ from .future_state import FutureState
 
 def shield[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
   """
-  Shield an awaitable from cancellation.
+  Shield an awaitable from cancellation, raising a CancelledError exception
+  immediately after it is cancelled.
 
   This function is identical to `asyncio.shield()` but does not display
   exceptions raised by the inner future after shielding occured in Python 3.14
@@ -50,7 +51,8 @@ def shield[T](awaitable: Awaitable[T], /) -> Awaitable[T]:
 
 async def shield_wait[T](awaitable: Awaitable[T], /, *, shield_count: int = 1) -> T:
   """
-  Shield and await an awaitable.
+  Shield an awaitable from cancellation, waiting for the underlying awaitable to
+  complete even when it is cancelled.
 
   Parameters
   ----------

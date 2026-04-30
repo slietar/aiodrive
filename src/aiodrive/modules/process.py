@@ -242,24 +242,21 @@ async def wait_for_process_kqueue(pid: int):
   loop = asyncio.get_running_loop()
   future = loop.create_future()
 
-  if not process_exists(pid):
-    return True
-
   def callback(kevent: select.kevent):
     future.set_result(None)
 
   with KqueueEventManager(callback) as manager:
-    if not process_exists(pid):
-      return
-
-    manager.update([
-      select.kevent(
-        pid,
-        filter=select.KQ_FILTER_PROC,
-        flags=(select.KQ_EV_ADD | select.KQ_EV_ONESHOT),
-        fflags=select.KQ_NOTE_EXIT,
-      ),
-    ])
+    try:
+      manager.update([
+        select.kevent(
+          pid,
+          filter=select.KQ_FILTER_PROC,
+          flags=(select.KQ_EV_ADD | select.KQ_EV_ONESHOT),
+          fflags=select.KQ_NOTE_EXIT,
+        ),
+      ])
+    except ProcessLookupError:
+      return True
 
     await future
 

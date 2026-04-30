@@ -11,6 +11,9 @@ class FutureState[T]:
     """
     A primitive for storing a future's state.
 
+    Instances of this class can be pickled if the stored result or exception is
+    picklable.
+
     This class provides similar functionality to the
     `asyncio.Future._get_snapshot()` method of CPython.
     """

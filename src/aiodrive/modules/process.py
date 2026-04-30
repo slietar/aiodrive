@@ -1,4 +1,6 @@
 import asyncio
+import os
+import select
 from asyncio import StreamReader, StreamWriter
 from asyncio.subprocess import Process as AsyncioProcess
 from collections.abc import Mapping, Sequence
@@ -8,6 +10,7 @@ from signal import Signals
 from typing import IO, Optional
 
 from .cancel import ensure_correct_cancellation
+from .kqueue import SUPPORTS_KQUEUE, KqueueEventManager
 
 
 @dataclass(slots=True)
@@ -176,6 +179,63 @@ async def start_process(
     stderr=proc.stderr, # type: ignore
     _proc=proc,
   )
+
+
+def process_exists(pid: int) -> bool:
+  """
+  Check if a process with the specified id exists.
+
+  Parameters
+  ----------
+  pid
+    The id of the process to check.
+
+  Returns
+  -------
+  bool
+    Whether a process with the specified id exists.
+  """
+
+  try:
+    os.kill(pid, 0)
+  except ProcessLookupError:
+    return False
+  except PermissionError:
+    return True
+  else:
+    return True
+
+async def wait_for_process_kq(pid: int):
+  loop = asyncio.get_running_loop()
+  future = loop.create_future()
+
+  if not process_exists(pid):
+    return
+
+  def callback(kevent):
+    future.set_result(None)
+
+  async with KqueueEventManager(callback) as manager:
+    if not process_exists(pid):
+      return
+
+    manager.update([
+      select.kevent(
+        pid,
+        filter=select.KQ_FILTER_PROC,
+        flags=(select.KQ_EV_ADD | select.KQ_EV_ONESHOT),
+        fflags=select.KQ_NOTE_EXIT,
+      ),
+    ])
+
+    await future
+
+async def wait_for_process(pid: int):
+  if SUPPORTS_KQUEUE:
+    await wait_for_process_kq(pid)
+  else:
+    while process_exists(pid):
+      await asyncio.sleep(0.1)
 
 
 __all__ = [

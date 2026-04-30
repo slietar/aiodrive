@@ -1,5 +1,4 @@
 import asyncio
-import os
 import pickle
 import socket
 from asyncio import Future, StreamReader, StreamWriter
@@ -13,6 +12,7 @@ from typing import Any
 from .contextualize import contextualize
 from .future_state import FutureState
 from .process import wait_for_process
+from .shield import shield
 from .task_group import volatile_task_group
 
 
@@ -152,6 +152,8 @@ class MultiprocessingProcess:
             if self._process.exitcode != 0:
                 raise RuntimeError(f"Process exited with code {self._process.exitcode}")
 
+        # First kill the process, which will cause an EOFError to be raised in
+        # _loop() and an exception to be set in all pending tasks
         self._stack.push_async_callback(close_callback)
         await self._stack.enter_async_context(contextualize(self._loop()))
 
@@ -207,17 +209,31 @@ class MultiprocessingProcess:
             ),
         )
 
+        cancelled = False
         future = Future[R]()
         self._tasks[task_id] = future
 
         while True:
             try:
-                return await asyncio.shield(future)
+                result = await shield(future)
             except asyncio.CancelledError:
+                # Occurs if the task itself raises CancelledError
                 if future.done():
                     raise
 
+                cancelled = True
+
                 await self._server_conn.send_object(CancelTaskMessage(task_id=task_id))
+            else:
+                break
+
+        # The task finished successfully before it could be cancelled, so we
+        # return a synthetic CancelledError
+        if cancelled:
+            raise asyncio.CancelledError
+
+        return result
+
 
 
 async def run_in_process[**P, R](func: Callable[P, Awaitable[R]], *args: P.args, **kwargs: P.kwargs) -> R:

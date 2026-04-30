@@ -12,8 +12,8 @@ from typing import Any
 
 from .contextualize import contextualize
 from .future_state import FutureState
+from .process import wait_for_process
 from .task_group import volatile_task_group
-from .thread_sync import to_thread
 
 
 @dataclass(slots=True)
@@ -28,10 +28,7 @@ class Connection:
             raise EOFError
 
         size = int.from_bytes(size_bytes)
-
-        x = pickle.loads(await self._reader.read(size))
-        print("Received", os.getpid(), x)
-        return x
+        return pickle.loads(await self._reader.read(size))
 
     async def send(self, data: bytes):
         size = len(data)
@@ -145,7 +142,12 @@ class MultiprocessingProcess:
             with suppress(IOError):
                 await self._server_conn.send_object(ShutdownMessage())
 
-            await to_thread(self._process.join)
+            assert self._process.pid is not None
+            await wait_for_process(self._process.pid)
+
+            self._process.join()
+
+            assert self._process.exitcode is not None
 
             if self._process.exitcode != 0:
                 raise RuntimeError(f"Process exited with code {self._process.exitcode}")

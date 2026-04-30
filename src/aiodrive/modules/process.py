@@ -10,7 +10,7 @@ from signal import Signals
 from typing import IO, Optional
 
 from .cancel import ensure_correct_cancellation
-from .kqueue import SUPPORTS_KQUEUE, KqueueEventManager
+from .thread_sync import to_thread
 
 
 @dataclass(slots=True)
@@ -205,14 +205,47 @@ def process_exists(pid: int) -> bool:
   else:
     return True
 
-async def wait_for_process_kq(pid: int):
+
+async def reap_child_process(pid: int):
+  """
+  Wait for the child process with the specified id to terminate and return its
+  exit code using os.waitpid().
+
+  The process must not have been reaped yet and must not be reaped elsewhere
+  while this function is running.
+
+  Parameters
+  ----------
+  pid
+    The id of the child process to wait for.
+
+  Returns
+  -------
+  int
+    The exit code of the child process.
+  """
+
+  if (await wait_for_process_kqueue(pid)) or (await wait_for_process_pidfd(pid)):
+    _, status = os.waitpid(pid, 0)
+  else:
+    _, status = await to_thread(os.waitpid, pid, 0)
+
+  return os.waitstatus_to_exitcode(status)
+
+
+async def wait_for_process_kqueue(pid: int):
+  if not hasattr(select, 'kqueue'):
+    return False
+
+  from .kqueue import KqueueEventManager
+
   loop = asyncio.get_running_loop()
   future = loop.create_future()
 
   if not process_exists(pid):
-    return
+    return True
 
-  def callback(kevent):
+  def callback(kevent: select.kevent):
     future.set_result(None)
 
   async with KqueueEventManager(callback) as manager:
@@ -230,16 +263,60 @@ async def wait_for_process_kq(pid: int):
 
     await future
 
+  return True
+
+async def wait_for_process_pidfd(pid: int):
+  if not hasattr(os, 'pidfd_open'):
+    return False
+
+  try:
+    pidfd = os.pidfd_open(pid) # type: ignore
+  except ProcessLookupError:
+    return True
+  except OSError:
+    # Can be caused by insufficient permissions
+    return False
+
+  loop = asyncio.get_running_loop()
+  future = loop.create_future()
+
+  loop.add_reader(pidfd, future.set_result, None)
+
+  try:
+    await future
+  finally:
+    loop.remove_reader(pidfd)
+    os.close(pidfd)
+
+  return True
+
 async def wait_for_process(pid: int):
-  if SUPPORTS_KQUEUE:
-    await wait_for_process_kq(pid)
-  else:
-    while process_exists(pid):
-      await asyncio.sleep(0.1)
+  """
+  Wait for the process with the specified id to terminate.
+
+  If no process with the specified id exists, the function returns immediately.
+
+  Parameters
+  ----------
+  pid
+    The id of the process to wait for.
+  """
+
+  if await wait_for_process_kqueue(pid):
+    return
+
+  if await wait_for_process_pidfd(pid):
+    return
+
+  while process_exists(pid):
+    await asyncio.sleep(0.1)
+
 
 
 __all__ = [
   'Process',
   'ProcessTerminatedException',
+  'reap_child_process',
   'start_process',
+  'wait_for_process',
 ]

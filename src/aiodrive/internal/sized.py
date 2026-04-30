@@ -1,4 +1,11 @@
-from collections.abc import AsyncIterable, Iterable, Sized
+from collections.abc import (
+    AsyncIterable,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Iterable,
+    Sized,
+)
 from typing import Optional, Protocol, runtime_checkable
 
 
@@ -13,10 +20,10 @@ class SupportsAclose(Protocol):
         ...
 
 
-class CloseableSizedAsyncIterable[T](AsyncIterable[T], Sized, SupportsAclose, Protocol):
+class CloseableSizedAsyncIterator[T](AsyncIterator[T], Sized, SupportsAclose, Protocol):
     ...
 
-class CloseableAsyncIterable[T](AsyncIterable[T], SupportsAclose, Protocol):
+class CloseableAsyncIterator[T](AsyncIterator[T], SupportsAclose, Protocol):
     ...
 
 class SizedAsyncIterable[T](AsyncIterable[T], Sized, Protocol):
@@ -26,15 +33,35 @@ class SizedIterable[T](Iterable[T], Sized, Protocol):
     ...
 
 
-class sized_aiter[T]:
-    def __init__(self, aiterable: AsyncIterable[T], *, length: Optional[int] = None):
-        self._aiterable = aiterable
+class sized_aiterator[T]:
+    __slots__ = ("__len__", "_aiterator", "aclose")
 
-        if isinstance(aiterable, SupportsAclose):
-            self.aclose = aiterable.aclose
+    def __init__(self, aiterator: AsyncIterator[T], /, *, length: Optional[int] = None):
+        self._aiterator = aiterator
+
+        if isinstance(aiterator, SupportsAclose):
+            self.aclose = aiterator.aclose
 
         if length is not None:
             self.__len__ = lambda: length
+
+    def __aiter__(self):
+        return self
+
+    def __anext__(self):
+        return self._aiterator.__anext__()
+
+    @classmethod
+    def from_iterable(cls, iterable: SizedAsyncIterable[T], /):
+        return cls(aiter(iterable), length=len(iterable))
+
+
+class closeable_aiterable[T]:
+    __slots__ = ("_aiterable", "aclose")
+
+    def __init__(self, aiterable: AsyncIterable[T], aclose: Callable[[], Awaitable[None]], /):
+        self._aiterable = aiterable
+        self.aclose = aclose
 
     def __aiter__(self):
         return self._aiterable.__aiter__()

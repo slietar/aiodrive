@@ -83,25 +83,25 @@ async def gather(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool =
   if sensitive:
     try:
       done_tasks, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-    except asyncio.CancelledError:
+    except asyncio.CancelledError as e:
       cancelled = True
       failed = False
 
       for task in tasks:
-        task.cancel()
+        task.cancel(e.args[0] if e.args else None)
     else:
       failed = any(task.cancelled() or (task.exception() is not None) for task in done_tasks)
 
       if failed:
         for task in tasks:
-          task.cancel()
+          task.cancel('Exception raised in another task of gather()')
   else:
     failed = False
 
   while True:
     try:
       await asyncio.wait(tasks, return_when=asyncio.ALL_COMPLETED)
-    except asyncio.CancelledError:
+    except asyncio.CancelledError as e:
       cancelled = True
 
       # If tasks were already cancelled due to an exception, don't cancel them
@@ -110,7 +110,7 @@ async def gather(*awaitables: Awaitable | Iterable[Awaitable], sensitive: bool =
         failed = False
       else:
         for task in tasks:
-          task.cancel()
+          task.cancel(e.args[0] if e.args else None)
     else:
       break
 

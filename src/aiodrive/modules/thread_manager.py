@@ -1,6 +1,7 @@
 import asyncio
 from asyncio import Future, Task, TaskGroup
 from collections.abc import Awaitable
+from typing import Any, Optional
 
 from .awaitable import wait_forever
 from .cancel import suppress
@@ -23,11 +24,11 @@ class ThreadManager:
         self._tasks = dict[int, Task]()
 
 
-    def _cancel(self, task_id: int):
+    def _cancel(self, task_id: int, message: Optional[Any]):
         task = self._tasks.get(task_id)
 
         if task is not None:
-            task.cancel()
+            task.cancel(message)
 
     def _create[T](self, task_id: int, awaitable: Awaitable[T], future: Future[T]):
         async def create_task():
@@ -100,12 +101,12 @@ class ThreadManager:
         while True:
             try:
                 result = await shield(future)
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as e:
                 if future.done():
                     raise
 
                 with suppress(RuntimeError):
-                    self._thread_loop.call_soon_threadsafe(self._cancel, task_id)
+                    self._thread_loop.call_soon_threadsafe(self._cancel, task_id, e.args[0] if e.args else None)
             else:
                 break
 

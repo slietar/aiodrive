@@ -70,9 +70,9 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
 
   try:
     done_tasks, pending_tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-  except asyncio.CancelledError:
+  except asyncio.CancelledError as e:
     for task in tasks:
-      task.cancel()
+      task.cancel(e.args[0] if e.args else None)
 
     await gather(tasks, sensitive=False)
     raise
@@ -80,7 +80,7 @@ async def race(*awaitables: Awaitable | Iterable[Awaitable]):
   winning_task = next(iter(done_tasks))
 
   for task in pending_tasks:
-    task.cancel()
+    task.cancel('Other task completed in race()')
 
   await gather(pending_tasks, sensitive=False)
   return tasks.index(winning_task), winning_task.result()

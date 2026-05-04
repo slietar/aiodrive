@@ -63,7 +63,7 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
         handled_signal_code = rec_signal_code
 
         if not exited:
-            scope.cancel()
+            scope.cancel(f"Signal {rec_signal_code} received")
 
     for signal_code in signal_codes:
         loop.add_signal_handler(signal_code, functools.partial(callback, signal_code))

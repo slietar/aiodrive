@@ -1,11 +1,12 @@
 import asyncio
 import contextlib
 from asyncio import Task
+from typing import Any, Optional
 
 from .event_loop import get_event_loop
 
 
-async def cancel_task(task: Task[object], /):
+async def cancel_task(task: Task[object], /, message: Optional[Any] = None):
   """
   Cancel and await the provided task.
 
@@ -20,7 +21,7 @@ async def cancel_task(task: Task[object], /):
   if task.done():
     await task
   else:
-    task.cancel()
+    task.cancel(message)
 
     try:
       await task

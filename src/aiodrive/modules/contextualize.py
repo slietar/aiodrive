@@ -36,7 +36,7 @@ async def contextualize(awaitable: Awaitable[None], /):
   def callback(task: GuaranteedTask[None]):
     # If the background task finished with an exception, cancel the scope.
     if not task.cancelled() and (task.exception() is not None):
-      scope.cancel()
+      scope.cancel('Exception raised in background task of contextualize()')
 
   background_task.add_done_callback(callback)
 

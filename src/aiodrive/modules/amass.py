@@ -67,7 +67,7 @@ def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -
             yield result
     finally:
       for task in pending_tasks:
-        task.cancel()
+        task.cancel('Amass iterator closing')
 
       await gather(tasks, sensitive=False)
 

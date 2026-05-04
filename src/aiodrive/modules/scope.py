@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 from asyncio import Task
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass(slots=True)
@@ -14,7 +14,7 @@ class Scope:
   cancellation_count: int = field(default=0, init=False)
   task: Optional[Task] = field(repr=False)
 
-  def cancel(self):
+  def cancel(self, message: Optional[Any] = None):
     """
     Cancel the current task.
 
@@ -29,7 +29,7 @@ class Scope:
     if self.task is None:
       raise RuntimeError("Scope has already been exited")
 
-    self.task.cancel()
+    self.task.cancel(message)
     self.cancellation_count += 1
 
 

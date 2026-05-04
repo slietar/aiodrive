@@ -1,33 +1,18 @@
 import asyncio
 import contextlib
 import functools
-import itertools
-import signal
 from asyncio import Event, Future
-from collections.abc import Callable, Iterator, Sequence
-from contextvars import ContextVar
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from signal import Signals as SignalCode
-from typing import NewType, Optional
+from typing import Optional
 
 from .scope import use_scope
 
 
 @dataclass(slots=True)
 class SignalHandledException(Exception):
-    signal: signal.Signals
-
-
-ListenerId = NewType("ListenerId", int)
-
-@dataclass(slots=True)
-class ListenerInfo:
-    callback: Callable[[], None]
-    child_count: int = 0
-
-LISTENER_ID_COUNTER = itertools.count()
-LISTENERS_BY_SIGNAL_CODE = dict[SignalCode, dict[ListenerId, ListenerInfo]]()
-LISTENER_PARENT_IDS_BY_SIGNAL_CODE = ContextVar[dict[SignalCode, ListenerId]]("LISTENER_PARENT_IDS_BY_SIGNAL_CODE", default={})
+    signal: SignalCode
 
 
 @contextlib.contextmanager
@@ -45,11 +30,8 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
     blocking, the current task is not cancelled but the exception is still
     raised.
 
-    If contexts returned by this function are nested, only the innermost
-    contexts raises the `SignalHandledException` upon exiting the context.
-
-    Apart from other calls to this function, no other signal listeners for the
-    same codes may be registered for the current event loop.
+    No other signal listeners for the same codes may be registered for the
+    current event loop.
 
     Parameters
     ----------
@@ -71,68 +53,28 @@ def handle_signal(raw_signal_code: Sequence[SignalCode] | SignalCode, /) -> Iter
 
     loop = asyncio.get_running_loop()
 
-    parent_ids = LISTENER_PARENT_IDS_BY_SIGNAL_CODE.get()
-    self_id = ListenerId(LISTENER_ID_COUNTER.__next__())
-
     exited = False
     handled_signal_code: Optional[SignalCode] = None
 
-    def callback(signal_code: SignalCode):
+    def callback(rec_signal_code: SignalCode):
         nonlocal handled_signal_code
 
         # Store the last handled signal code
-        handled_signal_code = signal_code
+        handled_signal_code = rec_signal_code
 
         if not exited:
             scope.cancel()
 
-    def signal_handler(signal_code: SignalCode):
-        for listener_info in LISTENERS_BY_SIGNAL_CODE[signal_code].values():
-            if listener_info.child_count == 0:
-                listener_info.callback()
-
     for signal_code in signal_codes:
-        parent_id = parent_ids.get(signal_code)
-        signal_listeners = LISTENERS_BY_SIGNAL_CODE.get(signal_code)
+        loop.add_signal_handler(signal_code, functools.partial(callback, signal_code))
 
-        if signal_listeners is None:
-            signal_listeners = {}
-            LISTENERS_BY_SIGNAL_CODE[signal_code] = signal_listeners
-
-            loop.add_signal_handler(
-                signal_code,
-                functools.partial(signal_handler, signal_code),
-            )
-
-        signal_listeners[self_id] = ListenerInfo(
-            callback=functools.partial(callback, signal_code),
-        )
-
-        if parent_id is not None:
-            signal_listeners[parent_id].child_count += 1
-
-    LISTENER_PARENT_IDS_BY_SIGNAL_CODE.set(
-        parent_ids | { signal_code: self_id for signal_code in signal_codes },
-    )
-
-    try:
-        with use_scope() as scope:
+    with use_scope() as scope:
+        try:
             yield
-    finally:
-        LISTENER_PARENT_IDS_BY_SIGNAL_CODE.set(parent_ids)
-
-        for signal_code in signal_codes:
-            signal_listeners = LISTENERS_BY_SIGNAL_CODE[signal_code]
-
-            del signal_listeners[self_id]
-
-            if not signal_listeners:
-                del LISTENERS_BY_SIGNAL_CODE[signal_code]
+        finally:
+            for signal_code in signal_codes:
                 loop.remove_signal_handler(signal_code)
-            else:
-                signal_listeners[parent_ids[signal_code]].child_count -= 1
-
-        exited = True
+                exited = True
 
     if handled_signal_code is not None:
         raise SignalHandledException(handled_signal_code)

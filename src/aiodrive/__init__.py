@@ -12,6 +12,7 @@ from .modules.concurrent_contexts import *
 from .modules.contextualize import *
 from .modules.daemon import *
 from .modules.event_loop import *
+from .modules.file_modes import *
 from .modules.future_state import *
 from .modules.gather import *
 from .modules.guaranteed_task import *

@@ -1,14 +1,13 @@
 import asyncio
 import contextlib
 import functools
-import os
 import sys
-import termios
-import tty
 from asyncio import StreamReader, StreamReaderProtocol, StreamWriter
 from asyncio.streams import FlowControlMixin
 from collections.abc import Callable
 from typing import IO
+
+from .file_modes import set_file_blocking, set_file_unbuffered
 
 
 async def get_reader(file: IO[bytes], /):
@@ -76,61 +75,6 @@ async def pipe(source: StreamReader, destination: StreamWriter, /, *, chunk_size
 
     destination.write(chunk)
     await destination.drain()
-
-
-@contextlib.contextmanager
-def file_blocking(file: IO[bytes], /, blocking: bool):
-  """
-  Set the blocking mode of a file.
-
-  The initial blocking mode is restored when exiting the context.
-
-  Parameters
-  ----------
-  file
-    The file to set the blocking mode for.
-  blocking
-    Whether to set the file to blocking mode.
-
-  Returns
-  -------
-  AbstractContextManager[None]
-  """
-
-  fd = file.fileno()
-  original = os.get_blocking(fd)
-  os.set_blocking(fd, blocking)
-
-  try:
-    yield
-  finally:
-    os.set_blocking(fd, original)
-
-@contextlib.contextmanager
-def file_unbuffered(file: IO[bytes], /):
-  """
-  Set a file to unbuffered mode.
-
-  The initial buffering mode is restored when exiting the context.
-
-  Parameters
-  ----------
-  file
-    The file to set to unbuffered mode.
-
-  Returns
-  -------
-  AbstractContextManager[None]
-  """
-
-  fd = file.fileno()
-  attr = termios.tcgetattr(fd)
-  tty.setcbreak(fd, termios.TCSANOW)
-
-  try:
-    yield
-  finally:
-    termios.tcsetattr(fd, termios.TCSANOW, attr)
 
 
 @contextlib.contextmanager
@@ -244,16 +188,14 @@ async def prompt(message: str, *, input: IO[bytes] = sys.stdin.buffer, output: I
       output.flush()
 
   with (
-      file_blocking(input, False),
-      file_unbuffered(input),
+      set_file_blocking(input, False),
+      set_file_unbuffered(input),
       watch_reader(input, callback),
   ):
     return await future
 
 
 __all__ = [
-  'file_blocking',
-  'file_unbuffered',
   'get_reader',
   'get_writer',
   'pipe',

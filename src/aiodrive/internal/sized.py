@@ -1,8 +1,6 @@
 from collections.abc import (
     AsyncIterable,
     AsyncIterator,
-    Awaitable,
-    Callable,
     Iterable,
     Sized,
 )
@@ -33,7 +31,7 @@ class SizedIterable[T](Iterable[T], Sized, Protocol):
     ...
 
 
-class sized_aiterator[T]:
+class aiterator_impl[T]:
     __slots__ = ("__len__", "_aiterator", "aclose")
 
     def __init__(self, aiterator: AsyncIterator[T], /, *, length: Optional[int] = None):
@@ -54,14 +52,3 @@ class sized_aiterator[T]:
     @classmethod
     def from_iterable(cls, iterable: SizedAsyncIterable[T], /):
         return cls(aiter(iterable), length=len(iterable))
-
-
-class closeable_aiterable[T]:
-    __slots__ = ("_aiterable", "aclose")
-
-    def __init__(self, aiterable: AsyncIterable[T], aclose: Callable[[], Awaitable[None]], /):
-        self._aiterable = aiterable
-        self.aclose = aclose
-
-    def __aiter__(self):
-        return self._aiterable.__aiter__()

@@ -3,9 +3,9 @@ from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
 from typing import Any, Optional, cast, overload
 
 from .checkpoint import suspend
-from .closing import auto_closing
 from .contextualize import contextualize
 from .latch import Latch
+from .shield import shield
 
 
 async def buffer_aiter[T](iterable: AsyncIterable[T], /, *, size: Optional[int]):
@@ -83,19 +83,14 @@ def ensure_aiter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterato
   Returns
   -------
   AsyncIterator[T]
-    The created async iterator. If the input is a closeable iterable, the output
-    is also closeable.
   """
 
   if isinstance(iterable, AsyncIterable):
     return aiter(iterable)
   else:
     async def create_aiter():
-      iterator = iter(iterable)
-
-      with auto_closing(iterator):
-        for item in iterator:
-          yield item
+      for item in iter(iterable):
+        yield item
 
     return create_aiter()
 
@@ -148,6 +143,29 @@ async def reduce[T, S](function: Callable[[S, T], S], iterable: AsyncIterable[T]
   return accumulator
 
 
+async def shield_aiter[T](iterable: AsyncIterable[T], /) -> AsyncIterator[T]:
+  """
+  Create an asynchronous iterator that yields items from the provided async
+  iterable, shielding each item request from cancellation.
+
+  Parameters
+  ----------
+  iterable
+    The async iterable to yield items from.
+
+  Returns
+  -------
+  AsyncIterator[T]
+  """
+
+  iterator = aiter(iterable)
+
+  while True:
+    try:
+      yield await shield(anext(iterator))
+    except StopAsyncIteration:
+      break
+
 async def suspend_iter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncIterator[T]:
   """
   Create an asynchronous iterator that yields items from the provided iterable,
@@ -160,9 +178,7 @@ async def suspend_iter[T](iterable: AsyncIterable[T] | Iterable[T], /) -> AsyncI
 
   Returns
   -------
-  Iterator[T]
-    An asynchronous generator yielding items from the iterable. It is crucial to
-    close the generator for internal tasks to be cleaned up.
+  AsyncIterator[T]
   """
 
   async for item in ensure_aiter(iterable):
@@ -175,5 +191,6 @@ __all__ = [
   'collect',
   'ensure_aiter',
   'reduce',
+  'shield_aiter',
   'suspend_iter',
 ]

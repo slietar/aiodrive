@@ -7,7 +7,7 @@ from ..internal.sized import (
   CloseableSizedAsyncIterator,
   SizedAsyncIterable,
   SizedIterable,
-  sized_aiterator,
+  aiterator_impl,
 )
 from .aiter import ensure_aiter
 from .task_group import volatile_task_group
@@ -105,7 +105,7 @@ def map[T, S](
   else:
     length = None
 
-  return sized_aiterator(generator(), length=length)
+  return aiterator_impl(generator(), length=length)
 
 
 __all__ = [

@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Iterable
 from ..internal.future import ensure_future
 from ..internal.sized import (
   CloseableSizedAsyncIterator,
-  sized_aiterator,
+  aiterator_impl,
 )
 from .gather import gather
 
@@ -74,7 +74,7 @@ def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -
     if cancelled:
       raise asyncio.CancelledError
 
-  return sized_aiterator(generator(), length=len(tasks)) # type: ignore
+  return aiterator_impl(generator(), length=len(tasks)) # type: ignore
 
 
 __all__ = [

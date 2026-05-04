@@ -1,5 +1,9 @@
 import asyncio
-from collections.abc import Awaitable, Iterable
+from asyncio import Future
+from collections.abc import Awaitable, Iterable, Sized
+from typing import Optional
+
+from .awaitable import terminate
 
 from ..internal.future import ensure_future
 from ..internal.sized import (
@@ -9,10 +13,12 @@ from ..internal.sized import (
 from .gather import gather
 
 
-# TODO: Add max_concurrent_count
-
-
-def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -> CloseableSizedAsyncIterator[T]:
+def amass[T](
+  awaitables: Iterable[Awaitable[T]],
+  /, *,
+  max_concurrent_count: Optional[int] = None,
+  sensitive: bool = True,
+) -> CloseableSizedAsyncIterator[T]:
   """
   Create an asynchronous iterator that yields results from awaitables as they
   complete.
@@ -26,6 +32,11 @@ def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -
   ----------
   awaitables
     The awaitables to wait for, as multiple arguments or as an iterable.
+  max_concurrent_count
+    The maximum number of awaitables to run concurrently. If `None`, there is no
+    limit and all awaitables are awaited immediately. If not `None` and the
+    generator is closed while some awaitables have not yet been awaited, those
+    awaitables are terminated.
   sensitive
     Whether to stop yielding results as soon as an exception is raised by one of
     the awaitables. If `True` and if a successful and a failed awaitable both
@@ -43,38 +54,65 @@ def amass[T](awaitables: Iterable[Awaitable[T]], /, *, sensitive: bool = True) -
     If an awaitable raises an exception.
   """
 
-  tasks = [ensure_future(awaitable) for awaitable in awaitables]
+  # tasks = [ensure_future(awaitable) for awaitable in awaitables]
+  # pending_tasks = set(tasks)
 
   async def generator():
     cancelled = False
-    pending_tasks = set(tasks)
+    awaitables_iter = iter(awaitables)
+
+    all_futures = set[Future]()
+    pending_futures = set[Future]()
 
     try:
-      while pending_tasks:
+      while True:
+        while (max_concurrent_count is None) or (len(pending_futures) < max_concurrent_count):
+          try:
+            awaitable = next(awaitables_iter)
+          except StopIteration:
+            break
+
+          future = ensure_future(awaitable)
+
+          all_futures.add(future)
+          pending_futures.add(future)
+
+        if not pending_futures:
+          break
+
         try:
-          done_tasks, pending_tasks = await asyncio.wait(pending_tasks, return_when=asyncio.FIRST_COMPLETED)
+          done_futures, pending_futures = await asyncio.wait(
+            pending_futures,
+            return_when=asyncio.FIRST_COMPLETED,
+          )
         except asyncio.CancelledError:
           cancelled = True
           return
 
-        for task in done_tasks:
+        for future in done_futures:
           try:
-            result = task.result()
+            result = future.result()
           except:  # noqa: E722
             if sensitive:
               return
           else:
             yield result
     finally:
-      for task in pending_tasks:
-        task.cancel('Amass iterator closing')
+      for future in pending_futures:
+        future.cancel('Amass iterator closing')
 
-      await gather(tasks, sensitive=False)
+      for awaitable in awaitables_iter:
+        all_futures.add(ensure_future(terminate(awaitable)))
+
+      await gather(all_futures, sensitive=False)
 
     if cancelled:
       raise asyncio.CancelledError
 
-  return aiterator_impl(generator(), length=len(tasks)) # type: ignore
+  return aiterator_impl(
+    generator(),
+    length=(len(awaitables) if isinstance(awaitables, Sized) else None),
+  ) # type: ignore
 
 
 __all__ = [

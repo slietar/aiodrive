@@ -129,7 +129,6 @@ class ThreadsafeCondition:
     self._waiters.add(future)
 
     context = ShieldContext()
-    # from .shield import shield
 
     try:
       await future

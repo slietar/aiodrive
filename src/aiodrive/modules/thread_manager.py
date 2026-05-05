@@ -133,3 +133,8 @@ class ThreadManager:
 
     async def __aexit__(self, exc_type, exc, tb): # noqa: ANN001
         return await self._context_manager.__aexit__(exc_type, exc, tb)
+
+
+__all__ = [
+    "ThreadManager",
+]

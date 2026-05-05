@@ -73,10 +73,13 @@ def set_file_rawmode(fd_like: FileDescriptorLike):
   finally:
     termios.tcsetattr(fd, termios.TCSADRAIN, original_attr)
 
+
+type TermiosAttribute = list[int | list[bytes | int]] | list[int | list[bytes]] | list[int | list[int]]
+
 @contextlib.contextmanager
-def set_file_attribute(fd_like: FileDescriptorLike, attr: termios._Attr, *, when: int = termios.TCSADRAIN):
+def set_file_attribute(fd_like: FileDescriptorLike, attr: TermiosAttribute, *, when: int = termios.TCSADRAIN):
   """
-  Set arbitrary termios attributes on a file descriptor.
+  Set termios attributes on a file descriptor.
 
   The initial attributes are restored when exiting the context.
 
@@ -102,6 +105,7 @@ def set_file_attribute(fd_like: FileDescriptorLike, attr: termios._Attr, *, when
     yield
   finally:
     termios.tcsetattr(fd, when, original_attr)
+
 
 @contextlib.contextmanager
 def set_file_unbuffered(fd_like: FileDescriptorLike, /):

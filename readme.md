@@ -13,28 +13,28 @@ Aiodrive is available on PyPI under the name `aiodrive`.
 ## API
 
 - Managing multiple awaitables
-  - **`amass()`**<br>Create an asynchronous generator that yields results from awaitables as they complete.
+  - **`amass()`**<br>Create an asynchronous iterator that yields results from awaitables as they complete.
   - **`gather()`**<br>Concurrently collect results from multiple awaitables.
   - **`race()`**<br>Wait for the fastest of a given set of awaitables.
-  - **`volatile_task_group()`**<br>Create a task group that automatically terminates when exiting the context.
+  - **`volatile_task_group()`**<br>Create a `TaskGroup` that automatically terminates when exiting the context.
 - Managing individual awaitables
-  - **`GuaranteedTask`**<br>A variant of `Task` that that guarantees that the provided awaitable is awaited before any cancellation occurs.
+  - **`GuaranteedTask`**<br>A variant of `asyncio.Task` that guarantees that the provided awaitable is awaited before any cancellation occurs.
   - **`ShieldContext`**<br>A class for shielding awaitables from cancellation based on the cancellation request count at the time of instantiation.
   - **`cancel_task()`**<br>Cancel and await the provided task.
   - **`possibly_await()`**<br>Wait for the given object if it is awaitable, or otherwise return it as is.
   - **`prime()`**<br>Prime an awaitable such that as much code as possible is executed immediately.
   - **`primed()`**<br>Decorate the given function such that it returns a primed awaitable.
-  - **`shield()`**<br>Shield an awaitable from cancellation.
+  - **`shield()`**<br>Shield an awaitable from cancellation, raising a CancelledError exception immediately after it is cancelled.
   - **`shield_wait()`**<br>Shield and await a given awaitable.
-  - **`shield_wait_forever()`**<br>  Shield and await the provided awaitable indefinitely, ignoring all cancellation requests.
+  - **`shield_wait_forever()`**<br>Shield and await the provided awaitable indefinitely, ignoring all cancellation requests.
 - Managing async iterators
   - **`auto_aclosing()`**<br>Create an async context manager that calls the `aclose` method, if any, on the provided object upon exit.
   - **`auto_closing()`**<br>Create a context manager that calls the `close` method, if any, on the provided object upon exit.
   - **`buffer_aiter()`**<br>Create an asynchronous generator that prefetches items from the given async iterable.
   - **`collect()`**<br>Collect items of an async iterable into a list.
-  - **`ensure_aiter()`**<br>Create an asynchronous iterator from the provided synchrounous or asynchronous iterable.
+  - **`ensure_aiter()`**<br>Create an asynchronous iterator from the provided iterable.
   - **`ensure_daemon()`**<br>Create a new awaitable that raises an exception if the given awaitable returns.
-  - **`map()`**<br>Map an iterable or asynchronous iterable to an asynchronous iterable using the given asynchronous mapper function.
+  - **`map()`**<br>Map an iterable or asynchronous iterable to an asynchronous iterator using the given asynchronous mapper function.
   - **`reduce()`**<br>Reduce the items from the provided asynchronous iterable.
   - **`zip_concurrently()`**<br>Zip multiple asynchronous iterables together, yielding tuples of items from each iterable.
   - **`suspend_iter()`**<br>Create an asynchronous iterator that yields items from the provided iterable, waiting for the next iteration of the event loop between each item.
@@ -48,24 +48,23 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`suppress()`**<br>Suppress the specified exceptions in an asynchronous context.
   - **`use_scope()`**<br>Create a context that locally manages the cancellation of the current task.
   - **`using_pending_daemon_handle()`**<br>Decorate the provided function such that it returns a `PendingDaemonHandle`.
-  - **`ensure_correct_cancellation()`**<br>  Ensure that a `CancelledError` is raised if the current task was cancelled while inside the context.
+  - **`ensure_correct_cancellation()`**<br>Ensure that a `CancelledError` is raised if the current task was cancelled while inside the context.
 - Managing the program
   - **`handle_signal()`**<br>Register a signal handler that cancels the current task when the signal is received.
   - **`run()`**<br>Run an awaitable in a new event loop with enforced structured concurrency.
   - **`wait_for_signal()`**<br>Wait for a signal.
 - Working with processes
   - **`MultiprocessingProcess`**<br>A class for managing asynchronous tasks in a separate process.
-  - **`recv_connection()`**<br>Receive a message from a multiprocessing `Connection`.
   - **`run_in_process()`**<br>Run an asynchronous function in a separate process.
   - **`start_process()`**<br>Start a process.
+  - **`reap_child_process()`**<br>Wait for the child process with the specified id to terminate and return its exit code.
+  - **`wait_for_process()`**<br>Wait for the process with the specified id to terminate.
 - Working with threads
-  - **`Latch`**<br>A primitive similar to `Event` but that can be awaited for both set and reset occurences.
+  - **`Latch`**<br>A class that can be set or unset, and can be waited on state changes.
   - **`ThreadManager`**<br>A class for managing the execution of awaitables in a separate thread that has its own event loop.
   - **`ThreadsafeCondition`**<br>A thread-safe condition.
   - **`ThreadsafeLock`**<br>A thread-safe lock.
   - **`ThreadsafeState`**<br>A thread-safe primitive for storing and watching a state.
-  <!-- - **`threadsafe_aiter()`**<br>Create an async iterator that can be consumed from a different thread than the one producing items. -->
-  <!-- - **`threadsafe_agen()`**<br>Create an async generator that can be consumed from a different thread than the one producing items. -->
   - **`launch_in_thread_loop_sync()`**<br>Launch an awaitable in a separate thread with its own event loop.
   - **`launch_in_thread_loop()`**<br>Launch an awaitable in a separate thread with its own event loop.
   - **`run_async()`**<br>Synchronously run an awaitable.
@@ -87,8 +86,11 @@ Aiodrive is available on PyPI under the name `aiodrive`.
   - **`set_event_loop()`**<br>Set the current event loop.
 - Working with I/O events
   - **`KqueueEventManager`**<br>Create a context manager for receiving kqueue events.
-  - **`file_blocking()`**<br>Set the blocking mode of a file.
-  - **`file_unbuffered()`**<br>Set a file to unbuffered mode.
+  - **`KqueueEventManagerContext`**<br>Context for kqueue event management.
+  - **`set_file_attribute()`**<br>Set a file attribute. *(See file_modes.py)*
+  - **`set_file_blocking()`**<br>Set the blocking mode of a file.
+  - **`set_file_rawmode()`**<br>Set a file to raw mode. *(See file_modes.py)*
+  - **`set_file_unbuffered()`**<br>Set a file to unbuffered mode.
   - **`get_reader()`**<br>Get a `StreamReader` for the given file.
   - **`get_writer()`**<br>Get a `StreamWriter` for the given file.
   - **`pipe()`**<br>Pipe data from the source to the destination.
